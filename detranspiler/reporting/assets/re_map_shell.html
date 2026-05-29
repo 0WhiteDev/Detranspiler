@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+__RE_THEME_CSS__
+__RE_MAP_EXTRA_CSS__
+</style>
+</head>
+<body class="map-shell">
+<div class="layout">
+<header class="topbar">__NAV__</header>
+<div id="app">
+  <aside>
+    <div>
+      <h1>__TITLE__</h1>
+      <div class="sub">__SUBTITLE__</div>
+    </div>
+    <div class="stats">
+      <div class="stat"><strong>__NODES_TOTAL__</strong>nodes</div>
+      <div class="stat"><strong>__EDGES_TOTAL__</strong>edges</div>
+    </div>
+    <div class="panel">
+      <h2>Search</h2>
+      <input id="search" type="search" placeholder="Function, class, JNI APIâ¦">
+    </div>
+    <div class="panel">
+      <h2>Node types</h2>
+      <div class="filters" id="filters"></div>
+    </div>
+    <div class="panel">
+      <h2>Edge types</h2>
+      <div class="filters" id="edgeFilters"></div>
+    </div>
+    <div class="panel">
+      <h2>Legend</h2>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="panel" id="detailPanel">
+      <h2>Selection</h2>
+      <div id="detail"><div class="detail-meta">Click a node to inspect links, recovery metadata, and neighbors.</div></div>
+    </div>
+  </aside>
+  <main>
+    <div class="toolbar">
+      <button type="button" id="fitBtn">Fit view</button>
+      <button type="button" id="resetBtn">Reset layout</button>
+    </div>
+    <canvas id="canvas"></canvas>
+    <div class="hint">Drag background to pan Â· Scroll to zoom Â· Click node to inspect Â· Double-click to focus</div>
+  </main>
+</div>
+</div>
+<script id="graph-data" type="application/json">__EMBEDDED_JSON__</script>
+<script>

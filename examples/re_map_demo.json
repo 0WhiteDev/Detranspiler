@@ -1,0 +1,327 @@
+{
+  "title": "Detranspiler RE Map (demo)",
+  "subtitle": "Sample JNI native library open in browser to explore",
+  "nodes": [
+    {
+      "id": "native:JNI_OnLoad",
+      "label": "JNI_OnLoad",
+      "kind": "entry",
+      "group": "entry",
+      "meta": {
+        "entry": true
+      }
+    },
+    {
+      "id": "native:FUN_register_natives",
+      "label": "FUN_register_natives",
+      "kind": "native_fn",
+      "group": "native_fn",
+      "meta": {
+        "registrar": true
+      }
+    },
+    {
+      "id": "native:Java_com_example_App_init",
+      "label": "Java_com_example_App_init",
+      "kind": "java_export",
+      "group": "java_export",
+      "meta": {
+        "java_export": true
+      }
+    },
+    {
+      "id": "java:com/example/App#run#()V",
+      "label": "App.run()V",
+      "kind": "java_method",
+      "group": "java",
+      "meta": {
+        "recovery_sources": [
+          "jni",
+          "jar"
+        ],
+        "confidence": 82,
+        "confidence_level": "HIGH"
+      }
+    },
+    {
+      "id": "jclass:com/example/App",
+      "label": "com.example.App",
+      "kind": "java_class",
+      "group": "java",
+      "meta": {
+        "internal": "com/example/App"
+      }
+    },
+    {
+      "id": "java:com/example/App#calc#(I)I",
+      "label": "App.calc(I)I",
+      "kind": "java_method",
+      "group": "java",
+      "meta": {
+        "recovery_sources": [
+          "bytecode",
+          "pseudoc"
+        ],
+        "confidence": 74,
+        "confidence_level": "MEDIUM"
+      }
+    },
+    {
+      "id": "java:com/example/crypto/Util#decrypt#(Ljava/lang/String;)Ljava/lang/String;",
+      "label": "Util.decrypt(Ljava/lang/String;)Ljava/lang/String;",
+      "kind": "java_method",
+      "group": "java",
+      "meta": {
+        "recovery_sources": [
+          "flatten",
+          "pseudoc"
+        ],
+        "confidence": 58,
+        "confidence_level": "LOW"
+      }
+    },
+    {
+      "id": "jclass:com/example/crypto/Util",
+      "label": "com.example.crypto.Util",
+      "kind": "java_class",
+      "group": "java",
+      "meta": {
+        "internal": "com/example/crypto/Util"
+      }
+    },
+    {
+      "id": "native:FUN_run",
+      "label": "FUN_run",
+      "kind": "native_fn",
+      "group": "native_fn",
+      "meta": {
+        "registered": true,
+        "flatten_score": 2
+      }
+    },
+    {
+      "id": "native:FUN_calc",
+      "label": "FUN_calc",
+      "kind": "native_fn",
+      "group": "native_fn",
+      "meta": {
+        "registered": true
+      }
+    },
+    {
+      "id": "native:FUN_decrypt",
+      "label": "FUN_decrypt",
+      "kind": "native_fn",
+      "group": "native_fn",
+      "meta": {
+        "flatten_score": 18,
+        "flatten_level": "control-flow flattening"
+      }
+    },
+    {
+      "id": "native:FUN_xor_loop",
+      "label": "FUN_xor_loop",
+      "kind": "native_fn",
+      "group": "native_fn",
+      "meta": {}
+    },
+    {
+      "id": "jni:FindClass",
+      "label": "FindClass",
+      "kind": "jni_api",
+      "group": "jni",
+      "meta": {}
+    },
+    {
+      "id": "jni:GetMethodID",
+      "label": "GetMethodID",
+      "kind": "jni_api",
+      "group": "jni",
+      "meta": {}
+    },
+    {
+      "id": "jni:CallVoidMethod",
+      "label": "CallVoidMethod",
+      "kind": "jni_api",
+      "group": "jni",
+      "meta": {}
+    },
+    {
+      "id": "jni:NewStringUTF",
+      "label": "NewStringUTF",
+      "kind": "jni_api",
+      "group": "jni",
+      "meta": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "native:JNI_OnLoad",
+      "target": "native:FUN_register_natives",
+      "kind": "calls",
+      "label": ""
+    },
+    {
+      "id": "e2",
+      "source": "native:JNI_OnLoad",
+      "target": "native:Java_com_example_App_init",
+      "kind": "calls",
+      "label": ""
+    },
+    {
+      "id": "e3",
+      "source": "jclass:com/example/App",
+      "target": "java:com/example/App#run#()V",
+      "kind": "declares",
+      "label": "method"
+    },
+    {
+      "id": "e4",
+      "source": "jclass:com/example/App",
+      "target": "java:com/example/App#calc#(I)I",
+      "kind": "declares",
+      "label": "method"
+    },
+    {
+      "id": "e5",
+      "source": "jclass:com/example/crypto/Util",
+      "target": "java:com/example/crypto/Util#decrypt#(Ljava/lang/String;)Ljava/lang/String;",
+      "kind": "declares",
+      "label": "method"
+    },
+    {
+      "id": "e6",
+      "source": "native:FUN_register_natives",
+      "target": "native:FUN_run",
+      "kind": "registrar",
+      "label": "RegisterNatives"
+    },
+    {
+      "id": "e7",
+      "source": "native:FUN_register_natives",
+      "target": "native:FUN_calc",
+      "kind": "registrar",
+      "label": ""
+    },
+    {
+      "id": "e8",
+      "source": "java:com/example/App#run#()V",
+      "target": "native:FUN_run",
+      "kind": "registers",
+      "label": ""
+    },
+    {
+      "id": "e9",
+      "source": "java:com/example/App#calc#(I)I",
+      "target": "native:FUN_calc",
+      "kind": "registers",
+      "label": ""
+    },
+    {
+      "id": "e10",
+      "source": "java:com/example/crypto/Util#decrypt#(Ljava/lang/String;)Ljava/lang/String;",
+      "target": "native:FUN_decrypt",
+      "kind": "registers",
+      "label": ""
+    },
+    {
+      "id": "e11",
+      "source": "native:Java_com_example_App_init",
+      "target": "native:FUN_run",
+      "kind": "export_bridge",
+      "label": "calls impl"
+    },
+    {
+      "id": "e12",
+      "source": "native:FUN_run",
+      "target": "native:FUN_decrypt",
+      "kind": "calls",
+      "label": ""
+    },
+    {
+      "id": "e13",
+      "source": "native:FUN_run",
+      "target": "native:FUN_xor_loop",
+      "kind": "calls",
+      "label": ""
+    },
+    {
+      "id": "e14",
+      "source": "native:FUN_decrypt",
+      "target": "native:FUN_xor_loop",
+      "kind": "calls",
+      "label": ""
+    },
+    {
+      "id": "e15",
+      "source": "native:FUN_calc",
+      "target": "native:FUN_xor_loop",
+      "kind": "calls",
+      "label": ""
+    },
+    {
+      "id": "e16",
+      "source": "native:FUN_run",
+      "target": "jni:FindClass",
+      "kind": "jni_invoke",
+      "label": ""
+    },
+    {
+      "id": "e17",
+      "source": "native:FUN_run",
+      "target": "jni:GetMethodID",
+      "kind": "jni_invoke",
+      "label": ""
+    },
+    {
+      "id": "e18",
+      "source": "native:FUN_run",
+      "target": "jni:CallVoidMethod",
+      "kind": "jni_invoke",
+      "label": ""
+    },
+    {
+      "id": "e19",
+      "source": "native:FUN_decrypt",
+      "target": "jni:NewStringUTF",
+      "kind": "jni_invoke",
+      "label": ""
+    },
+    {
+      "id": "e20",
+      "source": "native:FUN_run",
+      "target": "jclass:com/example/App",
+      "kind": "resolves",
+      "label": "FindClass"
+    },
+    {
+      "id": "e21",
+      "source": "native:FUN_run",
+      "target": "java:com/example/App#run#()V",
+      "kind": "resolves",
+      "label": "CallVoidMethod"
+    }
+  ],
+  "stats": {
+    "nodes_total": 16,
+    "edges_total": 21,
+    "kinds": {
+      "entry": 1,
+      "native_fn": 5,
+      "java_export": 1,
+      "java_method": 3,
+      "java_class": 2,
+      "jni_api": 4
+    },
+    "edge_kinds": {
+      "calls": 6,
+      "declares": 3,
+      "registrar": 2,
+      "registers": 3,
+      "export_bridge": 1,
+      "jni_invoke": 4,
+      "resolves": 2
+    }
+  }
+}

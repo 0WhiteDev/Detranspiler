@@ -1,0 +1,751 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Detranspiler RE Map (demo)</title>
+<style>
+
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --panel2: #1c2128;
+  --stroke: #30363d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #58a6ff;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --bad: #f85149;
+  --jni: #a371f7;
+  --entry: #f78166;
+  --java: #3fb950;
+  --mono: Consolas, "Cascadia Mono", Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  line-height: 1.45;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre { font-family: var(--mono); font-size: 12px; }
+.layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  min-height: 100vh;
+}
+.topbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--stroke);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.brand { font-weight: 600; font-size: 14px; margin-right: 8px; white-space: nowrap; }
+.nav-links { display: flex; gap: 6px; flex-wrap: wrap; }
+.nav-link {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-size: 13px;
+}
+.nav-link:hover { color: var(--text); border-color: var(--stroke); text-decoration: none; }
+.nav-link.active {
+  color: var(--text);
+  border-color: var(--stroke);
+  background: var(--panel2);
+}
+.sidebar {
+  background: var(--panel);
+  border-right: 1px solid var(--stroke);
+  padding: 16px 12px;
+  position: sticky;
+  top: 49px;
+  height: calc(100vh - 49px);
+  overflow: auto;
+}
+.sidebar h2 {
+  margin: 0 0 10px;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.side-nav { display: grid; gap: 4px; margin-bottom: 18px; }
+.side-nav a {
+  display: block;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.side-nav a:hover { background: var(--panel2); color: var(--text); text-decoration: none; }
+.main {
+  padding: 20px 24px 40px;
+  max-width: 1200px;
+}
+.page-title { margin: 0 0 4px; font-size: 22px; font-weight: 600; }
+.page-sub { color: var(--muted); font-size: 13px; margin-bottom: 18px; word-break: break-word; }
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.stat {
+  background: var(--panel2);
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.stat strong {
+  display: block;
+  font-size: 22px;
+  line-height: 1.1;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.stat span { color: var(--muted); font-size: 12px; }
+.panel {
+  background: var(--panel2);
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.panel > h2, .panel > h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.panel h3 { font-size: 12px; margin-top: 14px; }
+.section { scroll-margin-top: 64px; margin-bottom: 8px; }
+.section > h2 {
+  margin: 22px 0 10px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--stroke); }
+  .grid-2 { grid-template-columns: 1fr; }
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.data-table th, .data-table td {
+  border-bottom: 1px solid var(--stroke);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.data-table th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; }
+.data-table tr:hover td { background: rgba(88,166,255,.04); }
+.kv-table th { width: 220px; color: var(--muted); font-weight: 500; }
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--stroke);
+}
+.badge.ok { color: var(--ok); border-color: rgba(63,185,80,.35); background: rgba(63,185,80,.08); }
+.badge.warn { color: var(--warn); border-color: rgba(210,153,34,.35); background: rgba(210,153,34,.08); }
+.badge.bad { color: var(--bad); border-color: rgba(248,81,73,.35); background: rgba(248,81,73,.08); }
+.badge.neutral { color: var(--muted); }
+.toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  align-items: center;
+}
+input[type="search"], select, .btn {
+  background: var(--panel);
+  border: 1px solid var(--stroke);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+.btn { cursor: pointer; }
+.btn:hover, .btn.active { border-color: var(--accent); color: var(--accent); }
+.btn.active { background: rgba(88,166,255,.08); }
+.muted { color: var(--muted); }
+.list-compact { margin: 0; padding-left: 18px; }
+.list-compact li { margin: 4px 0; }
+.pre-block {
+  background: var(--panel);
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  padding: 12px;
+  overflow: auto;
+  max-height: 480px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+details.collapsible > summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.diff-wrap {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--panel);
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  overflow: auto;
+  max-height: 420px;
+}
+.diff-wrap .line { padding: 1px 10px; white-space: pre-wrap; word-break: break-word; }
+.diff-wrap .hdr { color: var(--accent); background: rgba(88,166,255,.08); }
+.diff-wrap .add { color: var(--ok); background: rgba(63,185,80,.08); }
+.diff-wrap .rem { color: var(--bad); background: rgba(248,81,73,.08); }
+.diff-wrap .ctx { color: var(--muted); }
+.method-card {
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  background: var(--panel2);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.method-card summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 10px 12px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.method-card summary::-webkit-details-marker { display: none; }
+.method-card .body { padding: 0 12px 12px; }
+.match-ok { color: var(--ok); }
+.match-partial { color: var(--warn); }
+.match-bad { color: var(--bad); }
+.hidden { display: none !important; }
+.empty { color: var(--muted); font-style: italic; }
+
+
+#app { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 49px); }
+#app aside {
+  background: var(--panel);
+  border-right: 1px solid var(--stroke);
+  padding: 16px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+#app main {
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 30%, #121820 0%, var(--bg) 70%);
+}
+#app h1 { font-size: 18px; margin: 0; font-weight: 600; }
+#app .sub { color: var(--muted); font-size: 12px; line-height: 1.4; word-break: break-word; }
+#app .filters { display: grid; gap: 6px; }
+#app .filters label.chk {
+  display: flex; align-items: center; gap: 8px; color: var(--text); cursor: pointer; font-size: 13px;
+}
+#app .legend { display: grid; gap: 6px; font-size: 12px; }
+#app .legend-row { display: flex; align-items: center; gap: 8px; }
+#app .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+#app .detail-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; word-break: break-word; }
+#app .detail-kind { color: var(--accent); font-size: 12px; margin-bottom: 8px; }
+#app .detail-meta { font-size: 12px; line-height: 1.5; color: var(--muted); white-space: pre-wrap; word-break: break-word; }
+#app .toolbar { position: absolute; top: 12px; right: 12px; z-index: 2; }
+#app #canvas { width: 100%; height: 100%; display: block; cursor: grab; }
+#app #canvas.dragging { cursor: grabbing; }
+#app .hint {
+  position: absolute; left: 12px; bottom: 12px; color: var(--muted); font-size: 12px;
+  background: rgba(22,27,34,.85); border: 1px solid var(--stroke); border-radius: 6px; padding: 6px 10px;
+}
+.map-shell .layout { grid-template-columns: 1fr; }
+.map-shell .sidebar { display: none; }
+.map-shell .main { max-width: none; padding: 0; }
+
+</style>
+</head>
+<body class="map-shell">
+<div class="layout">
+<header class="topbar"><div class="brand">Detranspiler</div><div class="nav-links"><a class="nav-link" href="report.html">Report</a><a class="nav-link active" href="re_map.html">RE Map</a></div></header>
+<div id="app">
+  <aside>
+    <div>
+      <h1>Detranspiler RE Map (demo)</h1>
+      <div class="sub">Sample JNI native library open in browser to explore</div>
+    </div>
+    <div class="stats">
+      <div class="stat"><strong>16</strong>nodes</div>
+      <div class="stat"><strong>21</strong>edges</div>
+    </div>
+    <div class="panel">
+      <h2>Search</h2>
+      <input id="search" type="search" placeholder="Function, class, JNI APIâ¦">
+    </div>
+    <div class="panel">
+      <h2>Node types</h2>
+      <div class="filters" id="filters"></div>
+    </div>
+    <div class="panel">
+      <h2>Edge types</h2>
+      <div class="filters" id="edgeFilters"></div>
+    </div>
+    <div class="panel">
+      <h2>Legend</h2>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="panel" id="detailPanel">
+      <h2>Selection</h2>
+      <div id="detail"><div class="detail-meta">Click a node to inspect links, recovery metadata, and neighbors.</div></div>
+    </div>
+  </aside>
+  <main>
+    <div class="toolbar">
+      <button type="button" id="fitBtn">Fit view</button>
+      <button type="button" id="resetBtn">Reset layout</button>
+    </div>
+    <canvas id="canvas"></canvas>
+    <div class="hint">Drag background to pan Â· Scroll to zoom Â· Click node to inspect Â· Double-click to focus</div>
+  </main>
+</div>
+</div>
+<script id="graph-data" type="application/json">{"title": "Detranspiler RE Map (demo)", "subtitle": "Sample JNI native library open in browser to explore", "nodes": [{"id": "native:JNI_OnLoad", "label": "JNI_OnLoad", "kind": "entry", "group": "entry", "meta": {"entry": true}}, {"id": "native:FUN_register_natives", "label": "FUN_register_natives", "kind": "native_fn", "group": "native_fn", "meta": {"registrar": true}}, {"id": "native:Java_com_example_App_init", "label": "Java_com_example_App_init", "kind": "java_export", "group": "java_export", "meta": {"java_export": true}}, {"id": "java:com/example/App#run#()V", "label": "App.run()V", "kind": "java_method", "group": "java", "meta": {"recovery_sources": ["jni", "jar"], "confidence": 82, "confidence_level": "HIGH"}}, {"id": "jclass:com/example/App", "label": "com.example.App", "kind": "java_class", "group": "java", "meta": {"internal": "com/example/App"}}, {"id": "java:com/example/App#calc#(I)I", "label": "App.calc(I)I", "kind": "java_method", "group": "java", "meta": {"recovery_sources": ["bytecode", "pseudoc"], "confidence": 74, "confidence_level": "MEDIUM"}}, {"id": "java:com/example/crypto/Util#decrypt#(Ljava/lang/String;)Ljava/lang/String;", "label": "Util.decrypt(Ljava/lang/String;)Ljava/lang/String;", "kind": "java_method", "group": "java", "meta": {"recovery_sources": ["flatten", "pseudoc"], "confidence": 58, "confidence_level": "LOW"}}, {"id": "jclass:com/example/crypto/Util", "label": "com.example.crypto.Util", "kind": "java_class", "group": "java", "meta": {"internal": "com/example/crypto/Util"}}, {"id": "native:FUN_run", "label": "FUN_run", "kind": "native_fn", "group": "native_fn", "meta": {"registered": true, "flatten_score": 2}}, {"id": "native:FUN_calc", "label": "FUN_calc", "kind": "native_fn", "group": "native_fn", "meta": {"registered": true}}, {"id": "native:FUN_decrypt", "label": "FUN_decrypt", "kind": "native_fn", "group": "native_fn", "meta": {"flatten_score": 18, "flatten_level": "control-flow flattening"}}, {"id": "native:FUN_xor_loop", "label": "FUN_xor_loop", "kind": "native_fn", "group": "native_fn", "meta": {}}, {"id": "jni:FindClass", "label": "FindClass", "kind": "jni_api", "group": "jni", "meta": {}}, {"id": "jni:GetMethodID", "label": "GetMethodID", "kind": "jni_api", "group": "jni", "meta": {}}, {"id": "jni:CallVoidMethod", "label": "CallVoidMethod", "kind": "jni_api", "group": "jni", "meta": {}}, {"id": "jni:NewStringUTF", "label": "NewStringUTF", "kind": "jni_api", "group": "jni", "meta": {}}], "edges": [{"id": "e1", "source": "native:JNI_OnLoad", "target": "native:FUN_register_natives", "kind": "calls", "label": ""}, {"id": "e2", "source": "native:JNI_OnLoad", "target": "native:Java_com_example_App_init", "kind": "calls", "label": ""}, {"id": "e3", "source": "jclass:com/example/App", "target": "java:com/example/App#run#()V", "kind": "declares", "label": "method"}, {"id": "e4", "source": "jclass:com/example/App", "target": "java:com/example/App#calc#(I)I", "kind": "declares", "label": "method"}, {"id": "e5", "source": "jclass:com/example/crypto/Util", "target": "java:com/example/crypto/Util#decrypt#(Ljava/lang/String;)Ljava/lang/String;", "kind": "declares", "label": "method"}, {"id": "e6", "source": "native:FUN_register_natives", "target": "native:FUN_run", "kind": "registrar", "label": "RegisterNatives"}, {"id": "e7", "source": "native:FUN_register_natives", "target": "native:FUN_calc", "kind": "registrar", "label": ""}, {"id": "e8", "source": "java:com/example/App#run#()V", "target": "native:FUN_run", "kind": "registers", "label": ""}, {"id": "e9", "source": "java:com/example/App#calc#(I)I", "target": "native:FUN_calc", "kind": "registers", "label": ""}, {"id": "e10", "source": "java:com/example/crypto/Util#decrypt#(Ljava/lang/String;)Ljava/lang/String;", "target": "native:FUN_decrypt", "kind": "registers", "label": ""}, {"id": "e11", "source": "native:Java_com_example_App_init", "target": "native:FUN_run", "kind": "export_bridge", "label": "calls impl"}, {"id": "e12", "source": "native:FUN_run", "target": "native:FUN_decrypt", "kind": "calls", "label": ""}, {"id": "e13", "source": "native:FUN_run", "target": "native:FUN_xor_loop", "kind": "calls", "label": ""}, {"id": "e14", "source": "native:FUN_decrypt", "target": "native:FUN_xor_loop", "kind": "calls", "label": ""}, {"id": "e15", "source": "native:FUN_calc", "target": "native:FUN_xor_loop", "kind": "calls", "label": ""}, {"id": "e16", "source": "native:FUN_run", "target": "jni:FindClass", "kind": "jni_invoke", "label": ""}, {"id": "e17", "source": "native:FUN_run", "target": "jni:GetMethodID", "kind": "jni_invoke", "label": ""}, {"id": "e18", "source": "native:FUN_run", "target": "jni:CallVoidMethod", "kind": "jni_invoke", "label": ""}, {"id": "e19", "source": "native:FUN_decrypt", "target": "jni:NewStringUTF", "kind": "jni_invoke", "label": ""}, {"id": "e20", "source": "native:FUN_run", "target": "jclass:com/example/App", "kind": "resolves", "label": "FindClass"}, {"id": "e21", "source": "native:FUN_run", "target": "java:com/example/App#run#()V", "kind": "resolves", "label": "CallVoidMethod"}], "stats": {"nodes_total": 16, "edges_total": 21, "kinds": {"entry": 1, "native_fn": 5, "java_export": 1, "java_method": 3, "java_class": 2, "jni_api": 4}, "edge_kinds": {"calls": 6, "declares": 3, "registrar": 2, "registers": 3, "export_bridge": 1, "jni_invoke": 4, "resolves": 2}}}</script>
+<script>
+(() => {
+  const DATA = JSON.parse(document.getElementById("graph-data").textContent);
+  const KIND_COLOR = { 
+    entry: getComputedStyle(document.documentElement).getPropertyValue("--entry").trim() || "#f78166",
+    java_export: "#79c0ff",
+    java_method: getComputedStyle(document.documentElement).getPropertyValue("--java").trim() || "#3fb950",
+    java_class: "#56d364",
+    native_fn: getComputedStyle(document.documentElement).getPropertyValue("--native").trim() || "#d29922",
+    jni_api: getComputedStyle(document.documentElement).getPropertyValue("--jni").trim() || "#a371f7",
+  };
+  const EDGE_COLOR = { 
+    calls: "#6e7681",
+    registers: "#3fb950",
+    resolves: "#a371f7",
+    jni_invoke: "#bc8cff",
+    export_bridge: "#58a6ff",
+    implements: "#56d364",
+    declares: "#30363d",
+    registrar: "#f0883e",
+  };
+  const KIND_LABEL = { 
+    entry: "Entry point",
+    java_export: "Java_* export",
+    java_method: "Java method",
+    java_class: "Java class",
+    native_fn: "Native function",
+    jni_api: "JNI API",
+  };
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+  const searchInput = document.getElementById("search");
+  const detail = document.getElementById("detail");
+  const filtersEl = document.getElementById("filters");
+  const edgeFiltersEl = document.getElementById("edgeFilters");
+  const legendEl = document.getElementById("legend");
+
+  const state = { 
+    nodes: DATA.nodes.map((n, i) => ({ 
+      ...n,
+      x: (Math.random() - 0.5) * 600,
+      y: (Math.random() - 0.5) * 400,
+      vx: 0,
+      vy: 0,
+      r: n.kind === "entry" ? 14 : n.kind === "java_method" ? 11 : 9,
+    } )),
+    edges: DATA.edges.slice(),
+    selectedId: null,
+    hoverId: null,
+    panX: 0,
+    panY: 0,
+    zoom: 1,
+    dragging: false,
+    dragNode: null,
+    lastX: 0,
+    lastY: 0,
+    kindVisible: {} ,
+    edgeVisible: {} ,
+    search: "",
+  };
+  const kinds = [...new Set(state.nodes.map(n => n.kind))].sort();
+  const edgeKinds = [...new Set(state.edges.map(e => e.kind))].sort();
+  kinds.forEach(k => { state.kindVisible[k] = true; } );
+  edgeKinds.forEach(k => { state.edgeVisible[k] = true; } );
+
+  kinds.forEach(kind => { 
+    const id = "kind-" + kind;
+    const row = document.createElement("label");
+    row.className = "chk";
+    row.innerHTML = `<input type="checkbox" id="${id} " checked> ${ KIND_LABEL[kind] || kind} `;
+    row.querySelector("input").addEventListener("change", (e) => { 
+      state.kindVisible[kind] = e.target.checked;
+      draw();
+    } );
+    filtersEl.appendChild(row);
+    const leg = document.createElement("div");
+    leg.className = "legend-row";
+    leg.innerHTML = `<span class="dot" style="background:${KIND_COLOR[kind] || "#8b949e"} "></span>${ KIND_LABEL[kind] || kind} `;
+    legendEl.appendChild(leg);
+  } );
+
+  edgeKinds.forEach(kind => { 
+    const id = "edge-" + kind;
+    const row = document.createElement("label");
+    row.className = "chk";
+    row.innerHTML = `<input type="checkbox" id="${id} " checked> ${kind} `;
+    row.querySelector("input").addEventListener("change", (e) => { 
+      state.edgeVisible[kind] = e.target.checked;
+      draw();
+    } );
+    edgeFiltersEl.appendChild(row);
+  } );
+
+  function resize() { 
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = Math.floor(rect.width * devicePixelRatio);
+    canvas.height = Math.floor(rect.height * devicePixelRatio);
+    canvas.style.width = rect.width + "px";
+    canvas.style.height = rect.height + "px";
+    draw();
+  } 
+
+  function visibleNodes() { 
+    const q = state.search.trim().toLowerCase();
+    return state.nodes.filter(n => { 
+      if (!state.kindVisible[n.kind]) return false;
+      if (!q) return true;
+      return n.label.toLowerCase().includes(q) || n.id.toLowerCase().includes(q);
+    } );
+  } 
+
+  function visibleNodeSet() { 
+    return new Set(visibleNodes().map(n => n.id));
+  } 
+
+  function visibleEdges(nodeSet) { 
+    return state.edges.filter(e => state.edgeVisible[e.kind] && nodeSet.has(e.source) && nodeSet.has(e.target));
+  } 
+
+  function nodeById(id) { 
+    return state.nodes.find(n => n.id === id);
+  } 
+
+  function neighbors(id) { 
+    const out = new Set();
+    state.edges.forEach(e => { 
+      if (e.source === id) out.add(e.target);
+      if (e.target === id) out.add(e.source);
+    } );
+    return [...out];
+  } 
+
+  function metaText(meta) { 
+    if (!meta || typeof meta !== "object") return "";
+    const lines = [];
+    for (const [k, v] of Object.entries(meta)) { 
+      if (v == null || v === "" || (Array.isArray(v) && !v.length)) continue;
+      lines.push(k + ": " + (Array.isArray(v) ? v.join(", ") : String(v)));
+    } 
+    return lines.join("\n");
+  } 
+
+  function showDetail(node) { 
+    if (!node) { 
+      detail.innerHTML = '<div class="detail-meta">Click a node to inspect links, recovery metadata, and neighbors.</div>';
+      return;
+    } 
+    const nbs = neighbors(node.id).map(id => nodeById(id)).filter(Boolean);
+    const inbound = state.edges.filter(e => e.target === node.id).map(e => `${e.kind}  â ${ nodeById(e.source)?.label || e.source} `);
+    const outbound = state.edges.filter(e => e.source === node.id).map(e => `${e.kind}  â ${ nodeById(e.target)?.label || e.target} `);
+    detail.innerHTML = `
+      <div class="detail-title">${escapeHtml(node.label)} </div>
+      <div class="detail-kind">${escapeHtml(KIND_LABEL[node.kind] || node.kind)}  · ${escapeHtml(node.id)} </div>
+      <div class="detail-meta">${escapeHtml(metaText(node.meta))} </div>
+      <div class="detail-meta" style="margin-top:8px"><strong>In (${inbound.length} )</strong>\n${escapeHtml(inbound.slice(0,12).join("\n") || "â")} </div>
+      <div class="detail-meta" style="margin-top:8px"><strong>Out (${outbound.length} )</strong>\n${escapeHtml(outbound.slice(0,12).join("\n") || "â")} </div>
+      <div class="detail-meta" style="margin-top:8px"><strong>Neighbors (${nbs.length} )</strong>\n${escapeHtml(nbs.slice(0,12).map(n => n.label).join("\n") || "â")} </div>
+    `;
+  } 
+
+  function escapeHtml(s) { 
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  } 
+
+  function screenTransform() { 
+    const w = canvas.width / devicePixelRatio;
+    const h = canvas.height / devicePixelRatio;
+    return { cx: w / 2 + state.panX, cy: h / 2 + state.panY, zoom: state.zoom };
+  } 
+
+  function toScreen(x, y) { 
+    const t = screenTransform();
+    return { x: t.cx + x * t.zoom, y: t.cy + y * t.zoom };
+  } 
+
+  function toWorld(sx, sy) { 
+    const t = screenTransform();
+    return { x: (sx - t.cx) / t.zoom, y: (sy - t.cy) / t.zoom };
+  } 
+
+  function pickNode(wx, wy) { 
+    let best = null;
+    let bestD = Infinity;
+    visibleNodes().forEach(n => { 
+      const d = Math.hypot(n.x - wx, n.y - wy);
+      const hit = n.r + 4;
+      if (d < hit && d < bestD) { best = n; bestD = d; } 
+    } );
+    return best;
+  } 
+
+  function simulate() { 
+    const nodes = visibleNodes();
+    const nodeSet = new Set(nodes.map(n => n.id));
+    const edges = visibleEdges(nodeSet);
+    const alpha = 0.35;
+    for (let i = 0; i < nodes.length; i++) { 
+      for (let j = i + 1; j < nodes.length; j++) { 
+        const a = nodes[i], b = nodes[j];
+        let dx = b.x - a.x, dy = b.y - a.y;
+        let dist = Math.hypot(dx, dy) || 0.01;
+        const force = 900 / (dist * dist);
+        dx = dx / dist * force;
+        dy = dy / dist * force;
+        a.vx -= dx; a.vy -= dy;
+        b.vx += dx; b.vy += dy;
+      } 
+    } 
+    edges.forEach(e => { 
+      const a = nodeById(e.source), b = nodeById(e.target);
+      if (!a || !b) return;
+      let dx = b.x - a.x, dy = b.y - a.y;
+      let dist = Math.hypot(dx, dy) || 0.01;
+      const force = (dist - 120) * 0.02;
+      dx = dx / dist * force; dy = dy / dist * force;
+      a.vx += dx; a.vy += dy;
+      b.vx -= dx; b.vy -= dy;
+    } );
+    nodes.forEach(n => { 
+      n.vx -= n.x * 0.001;
+      n.vy -= n.y * 0.001;
+      if (state.selectedId === n.id || state.hoverId === n.id) return;
+      n.vx *= 0.85; n.vy *= 0.85;
+      n.x += n.vx * alpha;
+      n.y += n.vy * alpha;
+    } );
+  } 
+
+  function draw() { 
+    const dpr = devicePixelRatio;
+    const w = canvas.width / dpr;
+    const h = canvas.height / dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const nodes = visibleNodes();
+    const nodeSet = visibleNodeSet();
+    const edges = visibleEdges(nodeSet);
+    const highlight = new Set();
+    if (state.selectedId) { 
+      highlight.add(state.selectedId);
+      neighbors(state.selectedId).forEach(id => highlight.add(id));
+    } 
+
+    ctx.lineWidth = 1;
+    edges.forEach(e => { 
+      const a = nodeById(e.source), b = nodeById(e.target);
+      if (!a || !b) return;
+      const p1 = toScreen(a.x, a.y), p2 = toScreen(b.x, b.y);
+      const active = highlight.size && (highlight.has(a.id) || highlight.has(b.id));
+      ctx.strokeStyle = active ? (EDGE_COLOR[e.kind] || "#8b949e") : (EDGE_COLOR[e.kind] || "#484f58");
+      ctx.globalAlpha = active ? 0.95 : highlight.size ? 0.15 : 0.55;
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+    } );
+    ctx.globalAlpha = 1;
+
+    nodes.forEach(n => { 
+      const p = toScreen(n.x, n.y);
+      const r = n.r * Math.max(0.7, state.zoom);
+      const selected = state.selectedId === n.id;
+      const hovered = state.hoverId === n.id;
+      const dim = highlight.size && !highlight.has(n.id);
+      ctx.globalAlpha = dim ? 0.25 : 1;
+      ctx.beginPath();
+      ctx.fillStyle = KIND_COLOR[n.kind] || "#8b949e";
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      if (selected || hovered) { 
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = selected ? 2.5 : 1.5;
+        ctx.stroke();
+      } 
+      if (selected || hovered || n.kind === "entry" || n.kind === "java_method") { 
+        ctx.fillStyle = "#e6edf3";
+        ctx.font = "11px Segoe UI, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(n.label.length > 28 ? n.label.slice(0, 26) + "â¦" : n.label, p.x, p.y - r - 4);
+      } 
+      ctx.globalAlpha = 1;
+    } );
+  } 
+
+  let tick = 0;
+  function loop() { 
+    if (tick < 240) simulate();
+    draw();
+    tick++;
+    requestAnimationFrame(loop);
+  } 
+
+  function fitView() { 
+    const nodes = visibleNodes();
+    if (!nodes.length) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    nodes.forEach(n => { 
+      minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x);
+      minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y);
+    } );
+    const w = canvas.width / devicePixelRatio;
+    const h = canvas.height / devicePixelRatio;
+    const spanX = maxX - minX || 1;
+    const spanY = maxY - minY || 1;
+    state.zoom = Math.min(w / (spanX + 120), h / (spanY + 120), 1.8);
+    state.panX = -(minX + maxX) / 2 * state.zoom;
+    state.panY = -(minY + maxY) / 2 * state.zoom;
+    draw();
+  } 
+
+  function resetLayout() { 
+    state.nodes.forEach(n => { 
+      n.x = (Math.random() - 0.5) * 600;
+      n.y = (Math.random() - 0.5) * 400;
+      n.vx = 0; n.vy = 0;
+    } );
+    tick = 0;
+  } 
+
+  canvas.addEventListener("mousedown", (e) => { 
+    const rect = canvas.getBoundingClientRect();
+    const wx = toWorld(e.clientX - rect.left, e.clientY - rect.top).x;
+    const wy = toWorld(e.clientX - rect.left, e.clientY - rect.top).y;
+    const picked = pickNode(wx, wy);
+    if (picked) {
+      state.dragNode = picked;
+      state.selectedId = picked.id;
+      showDetail(picked);
+    } else {
+      state.dragging = true;
+      state.lastX = e.clientX;
+      state.lastY = e.clientY;
+      canvas.classList.add("dragging");
+    } 
+    draw();
+  } );
+
+  window.addEventListener("mousemove", (e) => { 
+    const rect = canvas.getBoundingClientRect();
+    const wx = toWorld(e.clientX - rect.left, e.clientY - rect.top).x;
+    const wy = toWorld(e.clientX - rect.left, e.clientY - rect.top).y;
+    if (state.dragNode) { 
+      state.dragNode.x = wx;
+      state.dragNode.y = wy;
+      state.dragNode.vx = 0;
+      state.dragNode.vy = 0;
+      draw();
+      return;
+    } 
+    if (state.dragging) { 
+      state.panX += e.clientX - state.lastX;
+      state.panY += e.clientY - state.lastY;
+      state.lastX = e.clientX;
+      state.lastY = e.clientY;
+      draw();
+      return;
+    } 
+    const hover = pickNode(wx, wy);
+    const next = hover ? hover.id : null;
+    if (next !== state.hoverId) { 
+      state.hoverId = next;
+      draw();
+    } 
+  } );
+
+  window.addEventListener("mouseup", () => { 
+    state.dragging = false;
+    state.dragNode = null;
+    canvas.classList.remove("dragging");
+  } );
+
+  canvas.addEventListener("dblclick", (e) => { 
+    const rect = canvas.getBoundingClientRect();
+    const wx = toWorld(e.clientX - rect.left, e.clientY - rect.top).x;
+    const wy = toWorld(e.clientX - rect.left, e.clientY - rect.top).y;
+    const picked = pickNode(wx, wy);
+    if (picked) {
+      state.selectedId = picked.id;
+      showDetail(picked);
+      state.panX = -picked.x * state.zoom;
+      state.panY = -picked.y * state.zoom;
+      draw();
+    } 
+  } );
+
+  canvas.addEventListener("wheel", (e) => { 
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    const before = toWorld(sx, sy);
+    const factor = e.deltaY > 0 ? 0.92 : 1.08;
+    state.zoom = Math.min(3, Math.max(0.2, state.zoom * factor));
+    const after = toWorld(sx, sy);
+    state.panX += (after.x - before.x) * state.zoom;
+    state.panY += (after.y - before.y) * state.zoom;
+    draw();
+  } , { passive: false }} );
+
+  searchInput.addEventListener("input", () => { 
+    state.search = searchInput.value;
+    draw();
+  } );
+
+  document.getElementById("fitBtn").addEventListener("click", fitView);
+  document.getElementById("resetBtn").addEventListener("click", resetLayout);
+
+  window.addEventListener("resize", resize);
+  resize();
+  fitView();
+  loop();
+} )();
+
+</script>
+</body>
+</html>

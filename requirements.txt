@@ -1,0 +1,6 @@
+lief>=0.14.0
+pefile>=2023.2.7
+tqdm>=4.66.0
+
+# GUI (optional): pip install pywebview
+# pywebview>=5.0

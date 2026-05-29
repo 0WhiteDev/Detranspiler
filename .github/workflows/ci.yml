@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Compile all modules
+        run: python -m compileall detranspiler -q
+
+      - name: Doctor
+        run: python -m detranspiler.cli doctor
+
+      - name: Demo RE map
+        run: python -m detranspiler.cli re-map --demo --out examples/re_map_demo.html
+
+  smoke:
+    runs-on: windows-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Optional integration smoke test
+        env:
+          DETRANSPILER_SMOKE_SESSION: ${{ vars.DETRANSPILER_SMOKE_SESSION }}
+        run: |
+          if ("$env:DETRANSPILER_SMOKE_SESSION" -ne "") {
+            python tools/smoke_test.py
+          } else {
+            Write-Host "Skipping smoke test: set repository variable DETRANSPILER_SMOKE_SESSION to enable."
+          }

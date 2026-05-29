@@ -1,0 +1,14 @@
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+from detranspiler.java.gen.build_state import build_generation_state
+from detranspiler.java.gen.export_sources import write_export_sources
+from detranspiler.java.gen.register_sources import write_register_sources
+from detranspiler.java.gen.stub import write_stub_class
+
+def generate_java_like(*, exports: List[str], pseudo_c_path: Optional[Path], functions_json_path: Optional[Path]=None, out_path: Path, class_name: str='NativeDecompiled', max_functions: int=2000, max_pseudo_c_chars: int=2000000, jni_register: Optional[Dict[str, Any]]=None, jni_calls: Optional[Dict[str, Any]]=None, jar_path: Optional[Path]=None, binary_path: Optional[Path]=None, callgraph: Optional[Dict[str, Any]]=None, extra_seed_strings: Optional[List[str]]=None, flattening: Optional[Dict[str, Any]]=None, anti_analysis: Optional[Dict[str, Any]]=None, jar_sources_dir: Optional[Path]=None, deobfuscation: Optional[Dict[str, Any]]=None, string_decrypt: Optional[Dict[str, Any]]=None, string_symbol_map: Optional[Dict[str, str]]=None) -> Dict[str, Any]:
+    state = build_generation_state(exports=exports, pseudo_c_path=pseudo_c_path, functions_json_path=functions_json_path, class_name=class_name, max_functions=max_functions, max_pseudo_c_chars=max_pseudo_c_chars, jni_register=jni_register, jni_calls=jni_calls, jar_path=jar_path, binary_path=binary_path, callgraph=callgraph, extra_seed_strings=extra_seed_strings, flattening=flattening, anti_analysis=anti_analysis, jar_sources_dir=jar_sources_dir, deobfuscation=deobfuscation, string_decrypt=string_decrypt, string_symbol_map=string_symbol_map)
+    method_recovery: List[Dict[str, Any]] = []
+    stub_recovered = write_stub_class(state, out_path, method_recovery=method_recovery)
+    jni_sources_written, jni_out_dir = write_register_sources(state, out_path=out_path, jni_register=jni_register, method_recovery=method_recovery)
+    jni_export_sources_written, export_methods = write_export_sources(state, out_path=out_path, exports=exports, max_functions=max_functions, method_recovery=method_recovery)
+    return {'status': 'OK', 'output_path': str(out_path.resolve()), 'class_name': state.class_ident, 'methods': len(state.method_items), 'stub_methods_recovered': stub_recovered, 'had_pseudo_c': state.pseudo_c_text is not None, 'had_functions_json': bool(state.ghidra_funcs), 'jni_sources_written': jni_sources_written, 'jni_sources_dir': str(jni_out_dir.resolve()) if jni_out_dir else None, 'jni_export_methods': len(export_methods), 'jni_export_sources_written': jni_export_sources_written, 'jni_export_sources_dir': str((out_path.parent / 'jni_exports').resolve()) if jni_export_sources_written else None, 'jni_export_manifest': str((out_path.parent / 'jni_exports_manifest.json').resolve()) if jni_export_sources_written else None, 'method_recovery': method_recovery[:2000]}

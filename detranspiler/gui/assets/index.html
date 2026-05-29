@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Detranspiler</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-topbar">
+      <div class="app-brand">
+        <span class="dot"></span>
+        <span>Detranspiler</span>
+        <span class="app-author">by <a href="https://github.com/0WhiteDev" target="_blank" rel="noopener noreferrer">0WhiteDev</a></span>
+      </div>
+      <div class="app-meta" id="appMeta">Native → Java recovery</div>
+    </header>
+
+    <div class="app-body">
+      <aside class="app-sidebar">
+        <h2>Workspace</h2>
+        <button class="nav-btn active" data-view="setup" id="navSetup">⚙️ Setup</button>
+        <button class="nav-btn" data-view="report" id="navReport" disabled>📄 Report <span class="tag" id="tagReport">-</span></button>
+        <button class="nav-btn" data-view="map" id="navMap" disabled>🗺️ RE Map <span class="tag" id="tagMap">-</span></button>
+        <button class="nav-btn" data-view="nativemap" id="navNativeMap" disabled>🔗 Native Map <span class="tag" id="tagNativeMap">-</span></button>
+        <button class="nav-btn" data-view="sources" id="navSources" disabled>📁 Sources <span class="tag" id="tagSources">-</span></button>
+        <div class="divider"></div>
+        <h2>Tools</h2>
+        <button class="nav-btn" data-view="doctor" id="navDoctor">🩺 Doctor</button>
+        <div class="sidebar-footer">
+          <span id="appVersionMeta">Detranspiler</span>
+          <span class="sidebar-footer-sep">·</span>
+          <a href="https://github.com/0WhiteDev" target="_blank" rel="noopener noreferrer">0WhiteDev</a>
+        </div>
+      </aside>
+
+      <main class="app-main">
+        <section class="view active" id="viewSetup">
+          <h1 class="section-title">Analysis Setup</h1>
+          <p class="section-sub">Configure inputs and start detranspilation, or load an existing output folder.</p>
+
+          <div class="session-banner" id="sessionBanner"></div>
+
+          <div class="panel">
+            <h2>Input / Output</h2>
+            <div class="form-grid">
+              <div class="field">
+                <label>Native library (DLL / SO / DYLIB)</label>
+                <div class="field-row">
+                  <input type="text" id="inputDll" placeholder="C:\path\to\native.dll">
+                  <button class="btn" data-pick="dll">Browse</button>
+                </div>
+              </div>
+              <div class="field">
+                <label>Output directory</label>
+                <div class="field-row">
+                  <input type="text" id="outDir" placeholder="C:\path\to\output">
+                  <button class="btn" data-pick="folder">Browse</button>
+                </div>
+                <div class="hint">Use a new folder, or an existing one with job.json to load without re-running.</div>
+              </div>
+              <div class="field">
+                <label>Analysis mode</label>
+                <select id="mode">
+                  <option value="AUTO">AUTO</option>
+                  <option value="JNI">JNI</option>
+                  <option value="MANAGED">MANAGED</option>
+                  <option value="AOT">AOT</option>
+                  <option value="GENERIC_NATIVE">GENERIC_NATIVE</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="check-row"><input type="checkbox" id="force"> Overwrite output directory (--force)</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h2>Ghidra</h2>
+            <div class="form-grid">
+              <div class="field">
+                <label class="check-row"><input type="checkbox" id="useGhidra" checked> Use Ghidra headless decompilation</label>
+              </div>
+              <div class="field">
+                <label>Ghidra install directory</label>
+                <div class="field-row">
+                  <input type="text" id="ghidraDir" placeholder="C:\Tools\ghidra_12.0.1_PUBLIC">
+                  <button class="btn" data-pick="ghidra">Browse</button>
+                </div>
+              </div>
+              <div class="field">
+                <label>External pseudo-C (optional, when Ghidra disabled)</label>
+                <div class="field-row">
+                  <input type="text" id="pseudoC" placeholder="decompiled.c">
+                  <button class="btn" data-pick="pseudo_c">Browse</button>
+                </div>
+              </div>
+              <div class="field">
+                <label>External functions.json (optional)</label>
+                <div class="field-row">
+                  <input type="text" id="functionsJson" placeholder="functions.json">
+                  <button class="btn" data-pick="json">Browse</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h2>JAR Recovery</h2>
+            <div class="form-grid">
+              <div class="field">
+                <label class="check-row"><input type="checkbox" id="useJar"> Attach JAR for class/method recovery</label>
+              </div>
+              <div class="field">
+                <label class="check-row"><input type="checkbox" id="decompileJar" checked> Decompile JAR with CFR</label>
+              </div>
+              <div class="field" style="grid-column: 1 / -1">
+                <label>JAR path</label>
+                <div class="field-row">
+                  <input type="text" id="jarPath" placeholder="C:\path\to\app.jar">
+                  <button class="btn" data-pick="jar">Browse</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn btn-primary" id="btnStart">▶ Start Detranspilation</button>
+            <button class="btn" id="btnLoad">📂 Load Existing Session</button>
+            <button class="btn" id="btnOpenOut" disabled>Open Output Folder</button>
+          </div>
+
+          <div class="progress-wrap" id="progressWrap" style="display:none">
+            <div class="progress-head">
+              <span id="progressLabel">Starting…</span>
+              <span id="progressPct">0%</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+            <div class="console" id="console"></div>
+          </div>
+        </section>
+
+        <section class="view artifact-view" id="viewReport">
+          <iframe class="artifact-frame" id="frameReport" title="Report"></iframe>
+          <div class="artifact-empty hidden" id="emptyReport">Report not available for this session.</div>
+        </section>
+
+        <section class="view artifact-view" id="viewMap">
+          <iframe class="artifact-frame" id="frameMap" title="RE Map"></iframe>
+          <div class="artifact-empty hidden" id="emptyMap">RE Map not available for this session.</div>
+        </section>
+
+        <section class="view nativemap-view" id="viewNativemap">
+          <div class="nativemap-layout">
+            <aside class="nativemap-tree-panel panel">
+              <h2>Native methods</h2>
+              <div class="toolbar">
+                <input type="search" id="nativeMapSearch" placeholder="Filter methods…">
+              </div>
+              <div class="nativemap-tree" id="nativeMapTree"></div>
+              <p class="hint" id="nativeMapHint">Java native method → transpiled DLL function.</p>
+              <div class="toolbar" style="margin-top:8px">
+                <button class="btn" id="btnOpenNativeMap" disabled>Open native_map folder</button>
+              </div>
+            </aside>
+            <div class="nativemap-editor panel">
+              <div class="nativemap-meta" id="nativeMapMeta">
+                <h2 class="nativemap-title" id="nativeMapTitle">Select a method</h2>
+                <div class="nativemap-chips" id="nativeMapChips"></div>
+              </div>
+              <pre class="source-code" id="nativeMapCode"><code>Select a native method from the tree to view its decompiled C implementation.</code></pre>
+            </div>
+          </div>
+        </section>
+
+        <section class="view sources-view" id="viewSources">
+          <div class="sources-layout">
+            <aside class="sources-tree-panel panel">
+              <h2>Java sources</h2>
+              <div class="toolbar">
+                <input type="search" id="sourcesSearch" placeholder="Filter .java files…">
+              </div>
+              <ul class="sources-tree" id="sourcesTree"></ul>
+              <p class="hint" id="sourcesHint">Merged JAR after CFR decompile and native detranspile.</p>
+            </aside>
+            <div class="sources-editor panel">
+              <h2><span class="muted" id="sourcesPath">Select a file</span></h2>
+              <pre class="source-code" id="sourcesCode"><code>Select a file from the tree.</code></pre>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="viewDoctor">
+          <h1 class="section-title">Environment Doctor</h1>
+          <p class="section-sub">Check Python dependencies, Java, and Ghidra configuration.</p>
+          <div class="actions">
+            <button class="btn btn-primary" id="btnDoctor">Run Diagnostics</button>
+          </div>
+          <div class="panel" style="margin-top:16px">
+            <div class="doctor-grid" id="doctorGrid">
+              <div class="doctor-card"><strong>-</strong>Click Run Diagnostics</div>
+            </div>
+          </div>
+          <p class="app-credit">Detranspiler · <a href="https://github.com/0WhiteDev" target="_blank" rel="noopener noreferrer">0WhiteDev</a></p>
+        </section>
+      </main>
+    </div>
+  </div>
+  <script src="highlight.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
