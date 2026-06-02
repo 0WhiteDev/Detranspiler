@@ -3,9 +3,40 @@ import re
 import struct
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+from detranspiler.binary.reader import _pe_image_base
 from detranspiler.jni.register import _infer_dat_pointer_values, _load_strings_json, _pe_read_c_string, _pe_rva_to_file_offset
 
-def build_pe_context(*, pseudo_c_text: Optional[str], jni_register: Optional[Dict[str, Any]], binary_path: Optional[Path], extra_seed_strings: Optional[List[str]], jar_meta: Any) -> dict:
+def _load_ghidra_strings_near_pseudo_c(pseudo_c_path: Optional[Path]) -> Dict[int, str]:
+    if pseudo_c_path is None:
+        return {}
+    candidates = [
+        pseudo_c_path.parent.parent / 'ghidra' / 'strings.json',
+        pseudo_c_path.parent / 'strings.json',
+    ]
+    for path in candidates:
+        if path.is_file():
+            loaded = _load_strings_json(path)
+            if loaded:
+                return loaded
+    return {}
+
+
+def _image_base_from_strings_json(path: Path) -> int:
+    try:
+        sj = json.loads(path.read_text(encoding='utf-8', errors='replace'))
+        prog = sj.get('program') if isinstance(sj, dict) else None
+        if isinstance(prog, dict) and isinstance(prog.get('image_base'), str):
+            ib = str(prog.get('image_base')).strip().lower()
+            if ib.startswith('0x'):
+                ib = ib[2:]
+            if ib:
+                return int(ib, 16)
+    except Exception:
+        return 0
+    return 0
+
+
+def build_pe_context(*, pseudo_c_text: Optional[str], pseudo_c_path: Optional[Path]=None, jni_register: Optional[Dict[str, Any]], binary_path: Optional[Path], extra_seed_strings: Optional[List[str]], jar_meta: Any) -> dict:
     jar_seed_strings: List[str] = []
     if isinstance(jar_meta, dict) and jar_meta:
         seen_seed = set()
@@ -36,30 +67,31 @@ def build_pe_context(*, pseudo_c_text: Optional[str], jni_register: Optional[Dic
         dat_ptr_values = _infer_dat_pointer_values(pseudo_c_text.splitlines())
     strings_by_addr: Dict[int, str] = {}
     image_base = 0
+    strings_json_path: Optional[Path] = None
     if isinstance(jni_register, dict):
         sjp = jni_register.get('strings_json_path')
         if isinstance(sjp, str) and sjp:
-            sjp_path = Path(sjp)
-            strings_by_addr = _load_strings_json(sjp_path)
-            if sjp_path.is_file():
-                try:
-                    sj = json.loads(sjp_path.read_text(encoding='utf-8', errors='replace'))
-                    prog = sj.get('program') if isinstance(sj, dict) else None
-                    if isinstance(prog, dict) and isinstance(prog.get('image_base'), str):
-                        ib = str(prog.get('image_base')).strip()
-                        if ib.lower().startswith('0x'):
-                            ib = ib[2:]
-                        ib = ib.strip()
-                        if ib:
-                            image_base = int(ib, 16)
-                except Exception:
-                    image_base = 0
+            strings_json_path = Path(sjp)
+            strings_by_addr = _load_strings_json(strings_json_path)
+            if strings_json_path.is_file():
+                image_base = _image_base_from_strings_json(strings_json_path)
+    if not strings_by_addr:
+        strings_by_addr = _load_ghidra_strings_near_pseudo_c(pseudo_c_path)
+        if strings_json_path is None and pseudo_c_path is not None:
+            candidate = pseudo_c_path.parent.parent / 'ghidra' / 'strings.json'
+            if candidate.is_file():
+                image_base = _image_base_from_strings_json(candidate)
     binary_data: Optional[bytes] = None
     if binary_path is not None and binary_path.is_file():
         try:
             binary_data = binary_path.read_bytes()
         except Exception:
             binary_data = None
+    if image_base <= 0 and isinstance(binary_data, (bytes, bytearray)) and binary_data:
+        try:
+            image_base = int(_pe_image_base(binary_data))
+        except Exception:
+            image_base = 0
     bin_seed_strings: List[str] = []
     if isinstance(binary_data, (bytes, bytearray)) and binary_data:
         max_bytes = min(len(binary_data), 16 * 1024 * 1024)

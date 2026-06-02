@@ -12,6 +12,7 @@ from detranspiler.java.imports import inject_java_imports
 from detranspiler.jar.method_lookup import _jar_infer_unique_method_descriptor
 from detranspiler.java.jni_descriptors import _internal_class_to_package_and_class, _jni_method_sig_to_java
 from detranspiler.java.jni_export_parse import _parse_jni_export_name
+from detranspiler.java.jni_signature_infer import refine_jni_export_java_signature
 from detranspiler.java.modifiers import _access_flags_to_modifiers
 from detranspiler.java.recovery_hints import _emit_jni_hints
 
@@ -67,12 +68,22 @@ def write_export_sources(state: GenerationState, *, out_path: Path, exports: Lis
                 if isinstance(raw_symbol, str):
                     gh_sig = state.sig_by_raw.get(raw_symbol) or state.sig_by_sanitized.get(_sanitize_java_identifier(raw_symbol))
                 if gh_sig is not None:
-                    ret_java = gh_sig[0]
-                    param_types = [t for t, _n in gh_sig[1][2:]]
+                    block = None
+                    if isinstance(raw_symbol, str):
+                        block = state.by_name.get(_sanitize_java_identifier(raw_symbol)) or state.by_name.get(raw_symbol)
+                    ret_java, param_types, inferred_names = refine_jni_export_java_signature(
+                        block=block,
+                        ghidra_ret=gh_sig[0],
+                        ghidra_params=gh_sig[1],
+                        strings_by_addr=state.strings_by_addr,
+                        dat_ptr_values=state.dat_ptr_values,
+                        read_string_at_va=state.read_string_at_va,
+                    )
                 else:
-                    ret_java, param_types = ('void', [])
+                    ret_java, param_types, inferred_names = ('void', [], [])
             else:
                 ret_java, param_types = java_sig
+                inferred_names = []
             manifest_items.append({'class': cls, 'method': name, 'descriptor': sig if isinstance(sig, str) else None, 'return_type': ret_java, 'parameter_types': param_types, 'native_symbol': raw_symbol if isinstance(raw_symbol, str) else None, 'source': 'exported_jni_symbol'})
             method_flags = None
             if isinstance(state.jar_meta, dict):
@@ -85,6 +96,13 @@ def write_export_sources(state: GenerationState, *, out_path: Path, exports: Lis
             if method_flags is None:
                 is_static = True
             param_names = resolve_java_param_names(param_types=param_types, class_internal=cls, method=name if isinstance(name, str) else '', descriptor=sig if isinstance(sig, str) else None, is_static=is_static, jar_meta=state.jar_meta, jar_index=state.jar_index)
+            if inferred_names and len(inferred_names) == len(param_names):
+                param_names = [
+                    inferred_names[idx]
+                    if not inferred_names[idx].startswith('param_')
+                    else param_names[idx]
+                    for idx in range(len(param_names))
+                ]
             method_ident = unique_method_ident(name, used_method_idents)
             params_str = ', '.join((f'{t} {param_names[idx]}' for idx, t in enumerate(param_types)))
             decl_parts: List[str] = []

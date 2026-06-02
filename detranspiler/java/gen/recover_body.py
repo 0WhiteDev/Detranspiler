@@ -110,12 +110,12 @@ def _prelude_lines_without_return(lines: Optional[List[str]]) -> List[str]:
         return []
     return [ln for ln in lines if isinstance(ln, str) and ln.strip() and (not ln.strip().startswith('return '))]
 
-def _collect_non_void_return_body(*, best_expr: str, ret_sources: List[str], block: Optional[str], param_map: Dict[str, str], ret_java: str, side_effect_symbol: Optional[str], jni_calls: Any, param_names: List[str]) -> Optional[Tuple[List[str], str]]:
+def _collect_non_void_return_body(*, best_expr: str, ret_sources: List[str], block: Optional[str], param_map: Dict[str, str], ret_java: str, side_effect_symbol: Optional[str], jni_calls: Any, param_names: List[str], strings_by_addr: Any=None, dat_ptr_values: Any=None, read_string_at_va: Any=None) -> Optional[Tuple[List[str], str]]:
     prelude: List[str] = []
     for stmt in _jni_side_effect_lines(fn_symbol=side_effect_symbol, jni_calls=jni_calls, param_map=param_map, ret_java=ret_java, java_param_names=param_names):
         prelude.append(stmt if stmt.startswith('    ') else f'    {stmt}')
     if isinstance(block, str) and block.strip():
-        pseudo_lines = infer_java_lines_from_pseudoc(block, param_map=param_map, ret_java=ret_java)
+        pseudo_lines = infer_java_lines_from_pseudoc(block, param_map=param_map, ret_java=ret_java, strings_by_addr=strings_by_addr, dat_ptr_values=dat_ptr_values, read_string_at_va=read_string_at_va)
         prelude.extend(_prelude_lines_without_return(pseudo_lines))
     body = compose_method_body(prelude_lines=prelude, return_expr=best_expr)
     if body:
@@ -165,7 +165,7 @@ def emit_recovered_method_body(state: GenerationState, out_lines: List[str], req
         best_expr, ret_sources = pick_best_return_expr(return_candidates, jar_reference_expr=jar_ret)
         if best_expr is not None and request.ret_java != 'void':
             side_sym = request.side_effect_symbol or jni_sym
-            composed = _collect_non_void_return_body(best_expr=best_expr, ret_sources=ret_sources, block=block, param_map=param_map, ret_java=request.ret_java, side_effect_symbol=side_sym if isinstance(side_sym, str) else None, jni_calls=state.jni_calls, param_names=param_names)
+            composed = _collect_non_void_return_body(best_expr=best_expr, ret_sources=ret_sources, block=block, param_map=param_map, ret_java=request.ret_java, side_effect_symbol=side_sym if isinstance(side_sym, str) else None, jni_calls=state.jni_calls, param_names=param_names, strings_by_addr=state.strings_by_addr, dat_ptr_values=state.dat_ptr_values, read_string_at_va=state.read_string_at_va)
             if composed is not None:
                 body_lines, source = composed
                 non_void_candidates.append((source, body_lines))
@@ -179,7 +179,7 @@ def emit_recovered_method_body(state: GenerationState, out_lines: List[str], req
                 void_candidates.append(('simple', void_body))
     if request.ret_java == 'void' and (not body_emitted):
         void_sym = request.void_symbol or request.block_primary or request.block_secondary
-        pseudo_lines = infer_java_lines_from_pseudoc(block if isinstance(block, str) else '', param_map=param_map, ret_java=request.ret_java)
+        pseudo_lines = infer_java_lines_from_pseudoc(block if isinstance(block, str) else '', param_map=param_map, ret_java=request.ret_java, strings_by_addr=state.strings_by_addr, dat_ptr_values=state.dat_ptr_values, read_string_at_va=state.read_string_at_va)
         if isinstance(pseudo_lines, list) and pseudo_lines:
             void_candidates.append(('pseudoc', pseudo_lines))
         flat_body = recover_java_from_flattening(fn_symbol=void_sym if isinstance(void_sym, str) else None, flattening=state.flattening, param_map=param_map, ret_java=request.ret_java)
@@ -228,7 +228,7 @@ def emit_recovered_method_body(state: GenerationState, out_lines: List[str], req
         if isinstance(jni_body, list) and jni_body:
             non_void_candidates.append(('jni', jni_body))
     if not body_emitted and request.ret_java != 'void' and isinstance(block, str) and block.strip():
-        pseudo_lines = infer_java_lines_from_pseudoc(block, param_map=param_map, ret_java=request.ret_java)
+        pseudo_lines = infer_java_lines_from_pseudoc(block, param_map=param_map, ret_java=request.ret_java, strings_by_addr=state.strings_by_addr, dat_ptr_values=state.dat_ptr_values, read_string_at_va=state.read_string_at_va)
         if isinstance(pseudo_lines, list) and pseudo_lines:
             non_void_candidates.append(('pseudoc', pseudo_lines))
         flat_body = recover_java_from_flattening(fn_symbol=request.block_primary if isinstance(request.block_primary, str) else None, flattening=state.flattening, param_map=param_map, ret_java=request.ret_java)

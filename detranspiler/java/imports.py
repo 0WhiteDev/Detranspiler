@@ -7,8 +7,8 @@ def inject_java_imports(lines: List[str]) -> List[str]:
     needed: List[str] = []
     if 'Objects.' in text:
         needed.append('import java.util.Objects;')
-    if 'Arrays.' in text:
-        needed.append('import java.util.Arrays;')
+    if 'ByteBuffer' in text:
+        needed.append('import java.nio.ByteBuffer;')
     if not needed:
         return lines
     out: List[str] = []

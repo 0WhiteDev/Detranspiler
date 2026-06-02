@@ -1,5 +1,7 @@
 import re
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
+
+from detranspiler.java.throw_from_pseudoc import infer_java_throw_lines_from_pseudoc
 
 def _clean_expr(expr: str) -> str:
     e = expr.strip()
@@ -59,7 +61,15 @@ def _infer_string_equals_branch(block: str, *, param_map: Dict[str, str]) -> Opt
     lines: List[str] = []
     return None
 
-def _infer_exception_throw(block: str) -> Optional[List[str]]:
+def _infer_exception_throw(block: str, *, strings_by_addr: Optional[Dict[int, str]]=None, dat_ptr_values: Optional[Dict[str, int]]=None, read_string_at_va: Optional[Callable[[int], Optional[str]]]=None) -> Optional[List[str]]:
+    throws = infer_java_throw_lines_from_pseudoc(
+        block,
+        strings_by_addr=strings_by_addr,
+        dat_ptr_values=dat_ptr_values,
+        read_string_at_va=read_string_at_va,
+    )
+    if throws:
+        return throws
     lines: List[str] = []
     for m in re.finditer('puts\\s*\\(\\s*"([^"]*(?:exception|error|fail)[^"]*)"\\s*\\)', block, re.IGNORECASE):
         lines.append(f'System.err.println("{m.group(1)}");')
@@ -175,15 +185,26 @@ def _infer_early_return_void(block: str, *, param_map: Dict[str, str]) -> Option
     lines: List[str] = []
     for m in re.finditer('if\\s*\\(\\s*(?P<cond>[^)]+)\\s*\\)\\s*(?:return\\s*;|\\{\\s*return\\s*;\\s*\\})', block):
         cond = _map_params(_clean_expr(m.group('cond')), param_map)
-        if len(cond) <= 80:
-            lines.append(f'if ({cond}) {{return;}} ')
+        if len(cond) > 80:
+            continue
+        if re.search(r'[*]|->|local_|param_|DAT_|uVar|lVar|plVar|pcVar', cond):
+            continue
+        lines.append(f'if ({cond}) {{return;}} ')
     return lines if lines else None
 
-def infer_java_lines_from_pseudoc(block: str, *, param_map: Optional[Dict[str, str]]=None, ret_java: str='void') -> Optional[List[str]]:
+def infer_java_lines_from_pseudoc(block: str, *, param_map: Optional[Dict[str, str]]=None, ret_java: str='void', strings_by_addr: Optional[Dict[int, str]]=None, dat_ptr_values: Optional[Dict[str, int]]=None, read_string_at_va: Optional[Callable[[int], Optional[str]]]=None) -> Optional[List[str]]:
     if not block or not block.strip():
         return None
     param_map = dict(param_map or {})
     out: List[str] = []
+    throws = infer_java_throw_lines_from_pseudoc(
+        block,
+        strings_by_addr=strings_by_addr,
+        dat_ptr_values=dat_ptr_values,
+        read_string_at_va=read_string_at_va,
+    )
+    if throws:
+        out.extend(throws)
     pending_return: Optional[str] = None
     if ret_java != 'void':
         sw = _infer_switch_return(block, param_map=param_map)
@@ -200,9 +221,6 @@ def infer_java_lines_from_pseudoc(block: str, *, param_map: Optional[Dict[str, s
     branches = _infer_string_equals_branch(block, param_map=param_map)
     if branches:
         out.extend(branches)
-    throws = _infer_exception_throw(block)
-    if throws:
-        out.extend(throws)
     if pending_return and ret_java != 'void':
         if not any((ln.strip().startswith('return ') for ln in out)):
             out.append(f'return {pending_return};')

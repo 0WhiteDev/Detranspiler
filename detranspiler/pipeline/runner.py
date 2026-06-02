@@ -184,7 +184,7 @@ def run_pipeline(*, input_path: Path, out_dir: Path, requested_mode: str='AUTO',
                             strings_by_addr[int(addr_raw, 16)] = val
                 except Exception:
                     strings_by_addr = {}
-            pe_ctx = build_pe_context(pseudo_c_text=pseudo_c_text, jni_register=jni_register_res if isinstance(jni_register_res, dict) else None, binary_path=copied_input if copied_input.is_file() else None, extra_seed_strings=[], jar_meta={})
+            pe_ctx = build_pe_context(pseudo_c_text=pseudo_c_text, pseudo_c_path=pseudo_c_path, jni_register=jni_register_res if isinstance(jni_register_res, dict) else None, binary_path=copied_input if copied_input.is_file() else None, extra_seed_strings=[], jar_meta={})
             jnic_keystream_res = build_jnic_keystream(pseudo_c=pseudo_c_text, binary_path=copied_input if copied_input.is_file() else None, read_u64_at_va=pe_ctx.get('read_u64_at_va'), strings_by_addr=strings_by_addr or None)
             if isinstance(jnic_keystream_res, dict) and jnic_keystream_res.get('keystream'):
                 jni_register_res = enrich_jnic_register_calls(jni_register_res if isinstance(jni_register_res, dict) else None, pseudo_c=pseudo_c_text, keystream=jnic_keystream_res.get('keystream'), read_u64_at_va=pe_ctx.get('read_u64_at_va'))

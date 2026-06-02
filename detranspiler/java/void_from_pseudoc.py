@@ -1,11 +1,20 @@
 import re
 from typing import Callable, Dict, List, Optional, Set, Tuple
 from detranspiler.java.identifiers import _sanitize_java_identifier
+from detranspiler.java.throw_from_pseudoc import infer_java_throw_lines_from_pseudoc
 from detranspiler.jni.register import _resolve_string_expr
 
 def _infer_simple_java_void_body(block: str, *, param_map: Dict[str, str], strings_by_addr: Optional[Dict[int, str]]=None, dat_ptr_values: Optional[Dict[str, int]]=None, read_string_at_va: Optional[Callable[[int], Optional[str]]]=None, extra_seed_strings: Optional[List[str]]=None, hint_main: bool=False) -> Optional[List[str]]:
     if not block:
         return None
+    throws = infer_java_throw_lines_from_pseudoc(
+        block,
+        strings_by_addr=strings_by_addr,
+        dat_ptr_values=dat_ptr_values,
+        read_string_at_va=read_string_at_va,
+    )
+    if throws:
+        return throws
 
     def clean_expr(expr: str) -> str:
         e = expr.strip()
