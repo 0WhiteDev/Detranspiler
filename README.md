@@ -87,6 +87,15 @@ pip install -e .
 pip install -e ".[gui]"    # optional desktop GUI
 ```
 
+On Linux, `.[gui]` installs pywebview only. You still need a webview backend.
+For Qt (recommended inside a virtual environment):
+
+```bash
+pip install PyQt6 PyQt6-WebEngine qtpy
+```
+
+Without `PyQt6-WebEngine`, the GUI can fail with `ModuleNotFoundError: No module named 'PyQt6.QtWebEngineCore'`.
+
 ### Verify environment
 
 ```bash
@@ -101,6 +110,18 @@ $env:GHIDRA_INSTALL_DIR = "C:\ghidra\ghidra_11.0_PUBLIC"
 
 # Linux / macOS
 export GHIDRA_INSTALL_DIR=/opt/ghidra
+
+# Linux Flatpak (system install)
+export GHIDRA_INSTALL_DIR=/var/lib/flatpak/app/org.ghidra_sre.Ghidra/current/active/files/lib/ghidra
+
+# Linux Flatpak (user install)
+export GHIDRA_INSTALL_DIR=$HOME/.local/share/flatpak/app/org.ghidra_sre.Ghidra/current/active/files/lib/ghidra
+```
+
+If your shell is Fish, for example on some CachyOS setups:
+
+```fish
+set -x GHIDRA_INSTALL_DIR /var/lib/flatpak/app/org.ghidra_sre.Ghidra/current/active/files/lib/ghidra
 ```
 
 ### Run analysis
