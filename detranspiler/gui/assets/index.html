@@ -27,6 +27,7 @@
         <button class="nav-btn" data-view="sources" id="navSources" disabled>📁 Sources <span class="tag" id="tagSources">-</span></button>
         <div class="divider"></div>
         <h2>Tools</h2>
+        <button class="nav-btn" data-view="extractor" id="navExtractor">🔓 Native Extractor</button>
         <button class="nav-btn" data-view="doctor" id="navDoctor">🩺 Doctor</button>
         <div class="sidebar-footer">
           <span id="appVersionMeta">Detranspiler</span>
@@ -139,6 +140,45 @@
             <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
             <div class="console" id="console"></div>
           </div>
+        </section>
+
+        <section class="view" id="viewExtractor">
+          <h1 class="section-title">Native Extractor</h1>
+          <p class="section-sub">Extract a native library from a JAR without executing classes or loading native code.</p>
+
+          <div class="panel">
+            <h2>Input / Output</h2>
+            <div class="form-grid">
+              <div class="field" style="grid-column: 1 / -1">
+                <label>Input JAR</label>
+                <div class="field-row">
+                  <input type="text" id="extractJar" placeholder="C:\path\to\protected.jar">
+                  <button class="btn" id="btnPickExtractJar">Browse</button>
+                </div>
+              </div>
+              <div class="field" style="grid-column: 1 / -1">
+                <label>Output directory</label>
+                <div class="field-row">
+                  <input type="text" id="extractOut" placeholder="C:\path\to\output">
+                  <button class="btn" id="btnPickExtractOut">Browse</button>
+                </div>
+              </div>
+              <div class="field">
+                <label>Extraction mode</label>
+                <select id="extractMode">
+                  <option value="standard">Standard embedded DLL</option>
+                  <option value="jnic">JNIC Windows x64</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn btn-primary" id="btnExtractNative">Extract Native Library</button>
+            <button class="btn" id="btnOpenExtractOut" disabled>Open Output Folder</button>
+          </div>
+
+          <div class="extract-result hidden" id="extractResult"></div>
         </section>
 
         <section class="view artifact-view" id="viewReport">

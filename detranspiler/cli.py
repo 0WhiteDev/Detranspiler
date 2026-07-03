@@ -18,6 +18,10 @@ def _build_parser() -> argparse.ArgumentParser:
     a.add_argument('--jar', default=None, help='Optional path to a JAR to recover class/method modifiers')
     a.add_argument('--no-jar-decompile', action='store_true', help='Skip CFR decompilation of --jar')
     a.add_argument('--force', action='store_true')
+    e = sub.add_parser('extract', help='Safely extract a native library from a JAR')
+    e.add_argument('--jar', required=True, help='Input JAR path')
+    e.add_argument('--out', required=True, help='Output directory')
+    e.add_argument('--mode', required=True, choices=['standard', 'jnic'])
     d = sub.add_parser('doctor')
     d.add_argument('--ghidra-install-dir', default=None)
     d.add_argument('--json', action='store_true')
@@ -53,6 +57,20 @@ def main(argv=None) -> int:
         if isinstance(ghidra_run, dict) and ghidra_run.get('status') == 'EXCEPTION':
             failures.append('ghidra')
         return 1 if failures else 0
+    if args.command == 'extract':
+        import json
+        from detranspiler.extract import ExtractionError, extract_native_library
+        try:
+            result = extract_native_library(
+                jar_path=Path(args.jar),
+                out_dir=Path(args.out),
+                mode=args.mode,
+            )
+        except ExtractionError as exc:
+            print(f'ERROR [{exc.code}]: {exc}')
+            return 1
+        print(json.dumps(result, indent=2, ensure_ascii=True))
+        return 0
     if args.command == 'doctor':
         from detranspiler.doctor import run_doctor
         ghidra_install_dir = args.ghidra_install_dir

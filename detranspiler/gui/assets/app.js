@@ -23,6 +23,9 @@
     useJar: $("#useJar"),
     decompileJar: $("#decompileJar"),
     jarPath: $("#jarPath"),
+    extractJar: $("#extractJar"),
+    extractOut: $("#extractOut"),
+    extractMode: $("#extractMode"),
   };
 
   function waitForApi(maxMs) {
@@ -201,6 +204,38 @@
     } else if (el) {
       el.textContent = text || "";
     }
+  }
+
+  function renderExtraction(response) {
+    const box = $("#extractResult");
+    box.classList.remove("hidden", "ok", "error");
+    if (!response || !response.ok) {
+      box.classList.add("error");
+      const code = response && response.code ? " [" + escapeHtml(response.code) + "]" : "";
+      box.innerHTML = "<strong>Extraction failed" + code + "</strong><div>" + escapeHtml((response && response.error) || "Unknown error") + "</div>";
+      $("#btnOpenExtractOut").disabled = true;
+      return;
+    }
+    const result = response.result || {};
+    const pe = result.pe || {};
+    const transform = result.transform || {};
+    const details = [
+      ["Output", result.output_file],
+      ["Mode", result.mode],
+      ["Source", result.source_entry],
+      ["Range", String(result.offset) + " + " + String(result.size) + " bytes"],
+      ["PE", (pe.pe_format || "?") + " / " + (pe.architecture || "?")],
+      ["Transform", transform.kind || "none"],
+      ["SHA-256", result.sha256],
+    ];
+    box.classList.add("ok");
+    box.innerHTML =
+      "<strong>Native library extracted</strong>" +
+      "<dl>" + details
+        .filter((item) => item[1] != null && item[1] !== "")
+        .map((item) => "<dt>" + escapeHtml(item[0]) + "</dt><dd><code>" + escapeHtml(item[1]) + "</code></dd>")
+        .join("") + "</dl>";
+    $("#btnOpenExtractOut").disabled = false;
   }
 
   function appendConsole(lines) {
@@ -477,6 +512,41 @@
         else if (kind === "pseudo_c") fields.pseudoC.value = picked;
         else if (kind === "json") fields.functionsJson.value = picked;
       });
+    });
+
+    $("#btnPickExtractJar").addEventListener("click", async () => {
+      const picked = await api().pick_file("jar");
+      if (picked) fields.extractJar.value = picked;
+    });
+
+    $("#btnPickExtractOut").addEventListener("click", async () => {
+      const picked = await api().pick_file("folder");
+      if (picked) fields.extractOut.value = picked;
+    });
+
+    $("#btnExtractNative").addEventListener("click", async () => {
+      const button = $("#btnExtractNative");
+      button.disabled = true;
+      const box = $("#extractResult");
+      box.classList.remove("hidden", "ok", "error");
+      box.innerHTML = "<strong>Inspecting JAR...</strong>";
+      try {
+        const response = await api().extract_native({
+          jar: fields.extractJar.value.trim(),
+          out: fields.extractOut.value.trim(),
+          mode: fields.extractMode.value,
+        });
+        renderExtraction(response);
+      } catch (error) {
+        renderExtraction({ ok: false, code: "GUI_ERROR", error: String(error) });
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    $("#btnOpenExtractOut").addEventListener("click", async () => {
+      const out = fields.extractOut.value.trim();
+      if (out) await api().reveal_in_explorer(out);
     });
 
     fields.useJar.addEventListener("change", toggleJarFields);

@@ -25,6 +25,7 @@ out/
 *.log
 .cache/
 .tools/
+.tmp-*
 
 analysis/_smoke_*
 **/_smoke_*

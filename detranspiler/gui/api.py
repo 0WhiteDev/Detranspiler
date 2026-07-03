@@ -89,6 +89,29 @@ class DetranspilerApi:
             return str(result[0]) if result else None
         return str(result)
 
+    def extract_native(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        from detranspiler.extract import ExtractionError, extract_native_library
+
+        jar = str(config.get("jar") or "").strip()
+        out = str(config.get("out") or "").strip()
+        mode = str(config.get("mode") or "").strip().lower()
+        if not jar:
+            return {"ok": False, "code": "JAR_REQUIRED", "error": "Select an input JAR."}
+        if not out:
+            return {"ok": False, "code": "OUTPUT_REQUIRED", "error": "Select an output directory."}
+        try:
+            result = extract_native_library(
+                jar_path=Path(jar),
+                out_dir=Path(out),
+                mode=mode,
+            )
+        except ExtractionError as exc:
+            return {"ok": False, "code": exc.code, "error": str(exc)}
+        except Exception as exc:
+            return {"ok": False, "code": "UNEXPECTED_ERROR", "error": str(exc)}
+        return {"ok": True, "result": result}
+
+
     def run_doctor(self) -> Dict[str, Any]:
         from detranspiler.doctor import collect_diagnostics
 

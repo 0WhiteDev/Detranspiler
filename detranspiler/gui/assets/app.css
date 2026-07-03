@@ -629,3 +629,48 @@ html, body {
   background: var(--stroke);
   margin: 14px 0;
 }
+
+
+.extract-result {
+  margin-top: 16px;
+  border: 1px solid var(--stroke);
+  border-left: 3px solid var(--accent);
+  background: var(--panel);
+  padding: 14px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.extract-result.ok {
+  border-left-color: #3fb950;
+}
+
+.extract-result.error {
+  border-left-color: #f85149;
+}
+
+.extract-result > strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.extract-result dl {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 7px 12px;
+  margin: 0;
+}
+
+.extract-result dt {
+  color: var(--muted);
+}
+
+.extract-result dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.extract-result code {
+  white-space: normal;
+}

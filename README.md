@@ -124,6 +124,26 @@ If your shell is Fish, for example on some CachyOS setups:
 set -x GHIDRA_INSTALL_DIR /var/lib/flatpak/app/org.ghidra_sre.Ghidra/current/active/files/lib/ghidra
 ```
 
+### Extract a native library from a JAR
+
+Run this before detranspilation when the native library is packaged inside a JAR:
+
+```bash
+# One directly embedded DLL
+python -m detranspiler extract --jar application.jar --out ./native --mode standard
+
+# JNIC .dat bundle, Windows x64 payload
+python -m detranspiler extract --jar application.jar --out ./native --mode jnic
+```
+
+The extractor never executes JAR classes or loads the resulting DLL. It validates ZIP
+limits and paths, derives the JNIC Windows x64 range from loader bytecode, decodes a
+recognized stream transform, validates the result as an AMD64 PE32+ DLL, and writes
+extraction.json with the source entry, range, transform, PE metadata, and SHA-256.
+
+Ambiguous or unsupported layouts fail with an explicit error instead of selecting a
+candidate heuristically.
+
 ### Run analysis
 
 Minimal example (native library only):
@@ -236,6 +256,7 @@ Built with **pywebview** (Edge WebView2 on Windows):
 | Tab | Function |
 |-----|----------|
 | Setup | Configure DLL, JAR, Ghidra path, output folder; run or load session |
+| Native Extractor | Safely recover an embedded DLL or a JNIC Windows x64 payload before analysis |
 | Report | Embedded analysis report |
 | RE Map | Interactive relationship graph |
 | Native Map | Tree of Java packages/classes/methods with C viewer and syntax highlighting |
@@ -274,6 +295,26 @@ python -m detranspiler analyze <input> --out <dir> [options]
 | `--force` | Delete output directory if it already exists |
 
 Exit code is non-zero when a critical stage throws (`ghidra`, `java_like`, `jni_register`, `jni_calls`, or `report`).
+
+### `extract`
+
+Safely extract the native input before analysis.
+
+```text
+python -m detranspiler extract --jar <file.jar> --out <dir> --mode standard|jnic
+```
+
+| Option | Description |
+|--------|-------------|
+| `--jar` | Input JAR (required) |
+| `--out` | Output directory (required); existing output files are never overwritten |
+| `--mode standard` | Require exactly one embedded .dll and validate it as a PE DLL |
+| `--mode jnic` | Recover the Windows x64 range from a JNIC loader and write win-x64.dll |
+
+JNIC mode supports direct concatenated data and the raw LZMA2 stream wrapper used by
+the recognized JNIC loader. Unknown transforms, ambiguous loaders, missing resources,
+invalid ranges, and non-AMD64 payloads return a non-zero exit code with a stable error
+identifier.
 
 ### `doctor`
 
