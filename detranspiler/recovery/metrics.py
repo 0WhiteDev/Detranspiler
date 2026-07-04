@@ -2,14 +2,16 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from detranspiler.java.jni_descriptors import _internal_class_to_package_and_class
+from detranspiler.java.jni_descriptors import _internal_class_to_package_and_class, _jni_parameter_shape
+from detranspiler.jar.radioegor.context import _descriptor_from_decl
+from detranspiler.jar.radioegor.util import _NATIVE_DECL_RE
 _SCaffold_PREFIX = 'native0/'
 
 def _is_application_class(class_internal: str) -> bool:
     if class_internal == 'NativeDecompiled':
         return False
     return not class_internal.startswith(_SCaffold_PREFIX)
-_NATIVE_METHOD_RE = re.compile('(?m)(?:^[ \\t]*(?:@[\\w.]+\\s*)*)?(?:(?:public|private|protected|static|final|synchronized|strictfp|abstract)\\s+)*native\\s+(?:/\\*[^*]*\\*/\\s*)?[\\w<>\\[\\],\\s.?/*]+?\\b{name}\\s*\\(')
+_NATIVE_METHOD_RE = re.compile('(?m)(?:^[ \\t]*(?:@[\\w.]+\\s*)*)?(?:(?:public|private|protected|static|final|synchronized|strictfp|abstract)\\s+)*native\\s+(?:/\\*[^*]*\\*/\\s*)?[\\w<>\\[\\],\\s.?/*]+?(?<![\\w$]){name}\\s*\\(')
 
 def _sources_root(job: Dict[str, Any]) -> Optional[Path]:
     artifacts = job.get('artifacts') if isinstance(job.get('artifacts'), dict) else {}
@@ -42,6 +44,8 @@ def _native_index_methods(job: Dict[str, Any]) -> List[Dict[str, Any]]:
         desc = item.get('descriptor')
         if not (isinstance(cls, str) and isinstance(method, str) and isinstance(desc, str)):
             continue
+        if method.startswith('$jnic'):
+            continue
         key = (cls, method, desc)
         if key in seen:
             continue
@@ -53,13 +57,21 @@ def _class_source_path(sources_root: Path, class_internal: str) -> Path:
     rel = class_internal.replace('\\', '/').strip('/') + '.java'
     return sources_root / rel
 
-def _method_still_native(source_text: str, method_name: str) -> bool:
+def _method_still_native(source_text: str, method_name: str, descriptor: Optional[str]) -> bool:
     if not source_text or not method_name:
         return False
     if method_name in {'<init>', '<clinit>'}:
         return False
-    pattern = _NATIVE_METHOD_RE.pattern.format(name=re.escape(method_name))
-    return re.search(pattern, source_text, flags=re.MULTILINE) is not None
+    target_shape = _jni_parameter_shape(descriptor) if isinstance(descriptor, str) else None
+    for match in _NATIVE_DECL_RE.finditer(source_text):
+        if match.group('name') != method_name:
+            continue
+        if target_shape is None:
+            return True
+        declared = _descriptor_from_decl(match.group('ret'), match.group('params'))
+        if isinstance(declared, str) and _jni_parameter_shape(declared) == target_shape:
+            return True
+    return False
 
 def _scan_class_native_recovery(*, class_internal: str, native_methods: List[Dict[str, Any]], sources_root: Path) -> Dict[str, Any]:
     source_path = _class_source_path(sources_root, class_internal)
@@ -79,7 +91,7 @@ def _scan_class_native_recovery(*, class_internal: str, native_methods: List[Dic
         name = str(item.get('method') or '')
         if not name:
             continue
-        still_native = True if not has_source else _method_still_native(source_text, name)
+        still_native = True if not has_source else _method_still_native(source_text, name, item.get('descriptor'))
         if still_native:
             remaining.append(name)
         else:

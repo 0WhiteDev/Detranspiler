@@ -14,6 +14,9 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionIterator;
 import ghidra.program.model.listing.FunctionManager;
+import ghidra.program.model.listing.Instruction;
+import ghidra.program.model.listing.InstructionIterator;
+import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Parameter;
 import ghidra.program.model.symbol.RefType;
 import ghidra.program.model.symbol.Reference;
@@ -116,6 +119,7 @@ public class ExportFunctionsJson extends ghidra.app.script.GhidraScript {
 
         FunctionManager fm = currentProgram.getFunctionManager();
         ReferenceManager rm = currentProgram.getReferenceManager();
+        Listing listing = currentProgram.getListing();
 
         List<Function> functions = new ArrayList<>();
         Map<Address, Function> byEntry = new HashMap<>();
@@ -268,6 +272,43 @@ public class ExportFunctionsJson extends ghidra.app.script.GhidraScript {
                     }
                 }
                 out.println("],");
+
+                out.println("      \"instructions\": [");
+                Address nextEntry = null;
+                if (i + 1 < functions.size()) {
+                    Function nextFunction = functions.get(i + 1);
+                    nextEntry = nextFunction != null ? nextFunction.getEntryPoint() : null;
+                }
+                InstructionIterator instructionIt = listing.getInstructions(entry, true);
+                int instructionCount = 0;
+                boolean firstInstruction = true;
+                while (instructionIt.hasNext() && instructionCount < 20000) {
+                    Instruction instruction = instructionIt.next();
+                    if (instruction == null) {
+                        continue;
+                    }
+                    if (nextEntry != null && instruction.getAddress().compareTo(nextEntry) >= 0) {
+                        break;
+                    }
+                    if (!firstInstruction) {
+                        out.println(",");
+                    }
+                    out.print("        {");
+                    out.print("\"address\": ");
+                    _jsonString(out, instruction.getAddress() != null ? instruction.getAddress().toString() : null);
+                    out.print(", \"mnemonic\": ");
+                    _jsonString(out, instruction.getMnemonicString());
+                    out.print(", \"text\": ");
+                    _jsonString(out, instruction.toString());
+                    out.print("}");
+                    firstInstruction = false;
+                    instructionCount += 1;
+                }
+                out.println("");
+                out.println("      ],");
+                out.print("      \"instructions_total\": ");
+                out.print(instructionCount);
+                out.println(",");
 
                 Integer total = xrefsTotal.get(entry);
                 out.print("      \"xrefs_to_entry_total\": ");

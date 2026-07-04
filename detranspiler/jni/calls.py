@@ -20,7 +20,7 @@ def _parse_hex_offset(value: str) -> Optional[int]:
 def _unquote_c_string(expr: str) -> Optional[str]:
     s = str(expr or '').strip()
     for _ in range(4):
-        m = re.match('^\(\s*[A-Za-z_][A-Za-z0-9_\s*]*\s*\)\s*(.+)$', s)
+        m = re.match(r'^\(\s*[A-Za-z_][A-Za-z0-9_\s*]*\s*\)\s*(.+)$', s)
         if not m:
             break
         nxt = m.group(1).strip()
@@ -48,6 +48,32 @@ def _unquote_c_string(expr: str) -> Optional[str]:
     return ''.join(out)
 _decode_jni_offset = decode_jni_offset
 
+
+def _logical_statements(lines: List[str]):
+    pending: List[str] = []
+    start_line = 0
+    depth = 0
+    for line_no, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if not pending and stripped.startswith('/* FUNCTION '):
+            yield line_no, line
+            continue
+        if pending:
+            pending.append(stripped)
+        else:
+            pending = [line]
+            start_line = line_no
+        depth += line.count('(') - line.count(')')
+        if depth > 0 and ';' not in line:
+            continue
+        if depth > 0:
+            continue
+        yield start_line, ' '.join(part.strip() for part in pending)
+        pending = []
+        depth = 0
+    if pending:
+        yield start_line, ' '.join(part.strip() for part in pending)
+
 def extract_jni_calls(*, pseudo_c_path: Optional[Path], strings_json_path: Optional[Path]=None, binary_path: Optional[Path]=None, max_calls: int=10000) -> Dict[str, Any]:
     if pseudo_c_path is None or not pseudo_c_path.is_file():
         return {'status': 'SKIPPED_NO_PSEUDO_C'}
@@ -56,6 +82,7 @@ def extract_jni_calls(*, pseudo_c_path: Optional[Path], strings_json_path: Optio
 
 def extract_jni_calls_from_text(pseudo_c: str, *, pseudo_c_path: Optional[str]=None, strings_json_path: Optional[str]=None, binary_path: Optional[str]=None, max_calls: int=10000) -> Dict[str, Any]:
     lines = str(pseudo_c or '').splitlines()
+    logical_lines = list(_logical_statements(lines))
     strings_by_addr: Dict[int, str] = {}
     image_base = 0
     if isinstance(strings_json_path, str) and strings_json_path:
@@ -103,7 +130,7 @@ def extract_jni_calls_from_text(pseudo_c: str, *, pseudo_c_path: Optional[str]=N
     fnptr_offsets: Dict[str, int] = {}
     fun_header_re = re.compile('/\\* FUNCTION\\s+(\\w+)\\s+([0-9A-Fa-f]+)\\s+\\*/')
     assign_re = re.compile('^\\s*(?P<var>\\w+)\\s*=\\s*(?P<expr>[^;]{1,500});\\s*$')
-    stack_copy_re = re.compile('^\s*(local_[0-9A-Fa-f]+)\[\d+]\s*=\s*(\w+_[0-9A-Fa-f]+)\[\d+]\s*;\s*$')
+    stack_copy_re = re.compile(r'^\s*(local_[0-9A-Fa-f]+)\[\d+]\s*=\s*(\w+_[0-9A-Fa-f]+)\[\d+]\s*;\s*$')
     call_re = re.compile('(?:(?P<result>\\w+)\\s*=\\s*)?\\(\\*\\*\\(code\\s+\\*\\*\\)\\(\\*\\s*(?P<env>\\w+)\\s*\\+\\s*(?P<offset>0x[0-9A-Fa-f]+|\\d+)\\)\\)\\s*\\((?P<args>[^;]*)\\)\\s*;', re.IGNORECASE)
     fnptr_load_re = re.compile('^\\*\\(code\\s*\\*\\*\\)\\(\\*\\s*(?P<env>\\w+)\\s*\\+\\s*(?P<offset>0x[0-9A-Fa-f]+|\\d+)\\)$', re.IGNORECASE)
     deferred_call_re = re.compile('(?:(?P<result>\\w+)\\s*=\\s*)?\\(\\*(?P<ptr>[A-Za-z_]\\w*)\\)\\s*\\((?P<args>[^;]*)\\)\\s*;')
@@ -155,7 +182,7 @@ def extract_jni_calls_from_text(pseudo_c: str, *, pseudo_c_path: Optional[str]=N
                 if isinstance(method_info, dict):
                     resolved['target_method'] = method_info
         calls.append({'function': cur_fun_name, 'function_address': cur_fun_addr, 'line': line_no, 'result_var': result_var, 'env_var': env_var, 'offset': hex(offset), 'pointer_size': decoded.get('pointer_size'), 'jni_index': decoded.get('index'), 'jni_name': fn_name, 'category': category, 'args': args[:16], 'args_total': len(args), 'resolved': resolved, 'alternates': decoded.get('alternates') or [], 'source_line': source_line[:500]})
-    for line_no, line in enumerate(lines, start=1):
+    for line_no, line in logical_lines:
         m_fun = fun_header_re.match(line.strip())
         if m_fun:
             cur_fun_name = m_fun.group(1)

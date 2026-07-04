@@ -105,10 +105,15 @@ def _jar_scan_classes(jar_path: Optional[Path]) -> Optional[Dict[str, Any]]:
         interfaces_count, off = read_u2(data, off)
         off += 2 * interfaces_count
         fields_count, off = read_u2(data, off)
+        fields: Dict[Tuple[str, str], int] = {}
         for _fi in range(fields_count):
-            _af, off = read_u2(data, off)
-            _ni, off = read_u2(data, off)
-            _di, off = read_u2(data, off)
+            faf, off = read_u2(data, off)
+            fni, off = read_u2(data, off)
+            fdi, off = read_u2(data, off)
+            field_name = cp[fni] if 0 < fni < cp_count else None
+            field_desc = cp[fdi] if 0 < fdi < cp_count else None
+            if isinstance(field_name, str) and isinstance(field_desc, str):
+                fields[field_name, field_desc] = faf
             ac, off = read_u2(data, off)
             for _ai in range(ac):
                 _an, off = read_u2(data, off)
@@ -207,7 +212,7 @@ def _jar_scan_classes(jar_path: Optional[Path]) -> Optional[Dict[str, Any]]:
                 except Exception:
                     pass
             off = end
-        return {'class': class_name, 'access_flags': access_flags, 'methods': methods, 'methods_code': methods_code, 'methods_locals': methods_locals, 'methods_lvt': methods_lvt, 'bootstrap_methods': bootstrap_methods, 'cp': cp}
+        return {'class': class_name, 'access_flags': access_flags, 'fields': fields, 'methods': methods, 'methods_code': methods_code, 'methods_locals': methods_locals, 'methods_lvt': methods_lvt, 'bootstrap_methods': bootstrap_methods, 'cp': cp}
     out: Dict[str, Any] = {}
     try:
         with zipfile.ZipFile(p, 'r') as zf:

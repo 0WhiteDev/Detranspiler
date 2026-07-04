@@ -6,9 +6,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from detranspiler.jar.body_index import _path_to_internal
+from detranspiler.java.jni_export_parse import _parse_jni_export_name
+from detranspiler.java.jni_descriptors import _jni_parameter_shape
 
 from detranspiler.jar.radioegor.context import _descriptor_from_decl
 from detranspiler.jar.radioegor.util import _NATIVE_DECL_RE as _JAR_NATIVE_DECL_RE
+
+_ACC_NATIVE = 0x0100
 
 
 def _add_method(registry: Dict[str, Dict[str, Any]], *, class_internal: str, method: str, descriptor: Optional[str], fn_symbol: Optional[str], source: str, confidence: int) -> None:
@@ -42,7 +46,7 @@ def _registry_from_methods(methods: Any) -> Dict[str, Dict[str, Any]]:
 
 
 def _dedupe_methods(methods: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    by_pair: Dict[tuple[str, str], Dict[str, Any]] = {}
+    by_pair: Dict[tuple[str, str, str], Dict[str, Any]] = {}
     for item in methods:
         if not isinstance(item, dict):
             continue
@@ -50,7 +54,7 @@ def _dedupe_methods(methods: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         method = str(item.get('method') or '')
         if not cls or not method:
             continue
-        key = (cls, method)
+        key = (cls, method, str(item.get('descriptor') or '?'))
         existing = by_pair.get(key)
         if existing is None:
             by_pair[key] = dict(item)
@@ -71,7 +75,10 @@ def _dedupe_methods(methods: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _recompute_native_index_stats(native_index: Dict[str, Any]) -> Dict[str, Any]:
-    methods = _dedupe_methods([m for m in native_index.get('methods') or [] if isinstance(m, dict)])
+    methods = _dedupe_methods([
+        m for m in native_index.get('methods') or []
+        if isinstance(m, dict) and m.get('method') != '$jnicLoader'
+    ])
     methods.sort(key=lambda x: (-int(x.get('confidence') or 0), str(x.get('class') or ''), str(x.get('method') or '')))
     by_class: Dict[str, int] = {}
     for m in methods:
@@ -103,9 +110,24 @@ def augment_native_index_from_java_sources(native_index: Optional[Dict[str, Any]
         class_internal = _path_to_internal(rel)
         for match in _JAR_NATIVE_DECL_RE.finditer(text):
             name = match.group('name')
-            if name in {'class', 'interface', 'enum'}:
+            if name in {'class', 'interface', 'enum', '$jnicLoader'}:
                 continue
             desc = _descriptor_from_decl(match.group('ret'), match.group('params'))
+            shape = _jni_parameter_shape(desc) if isinstance(desc, str) else None
+            candidates = [
+                item for item in registry.values()
+                if item.get('class') == class_internal
+                and item.get('method') == name
+                and isinstance(item.get('descriptor'), str)
+                and _jni_parameter_shape(item['descriptor']) == shape
+            ]
+            if shape is not None and len(candidates) == 1:
+                target = candidates[0]
+                sources = target.setdefault('sources', [])
+                if source not in sources:
+                    sources.append(source)
+                target['confidence'] = max(int(target.get('confidence') or 0), confidence)
+                continue
             _add_method(registry, class_internal=class_internal, method=name, descriptor=desc, fn_symbol=None, source=source, confidence=confidence)
     base = dict(native_index) if isinstance(native_index, dict) else {'status': 'OK'}
     base['methods'] = list(registry.values())
@@ -118,15 +140,15 @@ def augment_native_index_with_jni_register(native_index: Optional[Dict[str, Any]
     if not isinstance(jni_register, dict):
         return native_index
     registry = _registry_from_methods(native_index.get('methods'))
-    by_method_desc: Dict[tuple[str, str], Dict[str, Any]] = {}
-    by_method: Dict[str, List[Dict[str, Any]]] = {}
+    by_method_desc: Dict[tuple[str, str, str], Dict[str, Any]] = {}
+    by_method: Dict[tuple[str, str], List[Dict[str, Any]]] = {}
     for item in registry.values():
         method = item.get('method')
         desc = item.get('descriptor')
         if isinstance(method, str) and isinstance(desc, str):
-            by_method_desc[method, desc] = item
+            by_method_desc[str(item.get('class') or ''), method, desc] = item
         if isinstance(method, str):
-            by_method.setdefault(method, []).append(item)
+            by_method.setdefault((str(item.get('class') or ''), method), []).append(item)
     for call in jni_register.get('register_calls') or []:
         if not isinstance(call, dict):
             continue
@@ -139,10 +161,10 @@ def augment_native_index_with_jni_register(native_index: Optional[Dict[str, Any]
             fn = m.get('fn_symbol')
             if not isinstance(name, str) or not isinstance(sig, str) or not isinstance(fn, str):
                 continue
-            target = by_method_desc.get((name, sig))
+            target = by_method_desc.get((reg_cls or '', name, sig))
             if target is None and reg_cls:
                 target = registry.get(f"{reg_cls}::{name}::{sig}")
-            candidates = by_method.get(name) or []
+            candidates = by_method.get((reg_cls or '', name)) or []
             if target is None and len(candidates) == 1:
                 target = candidates[0]
             if target is None:
@@ -245,14 +267,14 @@ def build_native_method_index(*, exports: Optional[List[str]]=None, jni_register
     for sym in exports or []:
         if not isinstance(sym, str) or not sym.startswith('Java_'):
             continue
-        parts = sym.split('__', 1)
-        prefix = parts[0][5:] if sym.startswith('Java_') else sym
-        segs = prefix.split('_')
-        if len(segs) < 2:
+        parsed = _parse_jni_export_name(sym, jar_meta=jar_meta)
+        if not isinstance(parsed, dict) or parsed.get('is_jnic_loader'):
             continue
-        method = segs[-1]
-        cls = '/'.join(segs[:-1]).replace('_', '/')
-        desc = parts[1] if len(parts) > 1 else None
+        cls = parsed.get('class')
+        method = parsed.get('method')
+        if not isinstance(cls, str) or not isinstance(method, str):
+            continue
+        desc = parsed.get('descriptor') if isinstance(parsed.get('descriptor'), str) else None
         _add_method(registry, class_internal=cls, method=method, descriptor=desc, fn_symbol=sym, source='export', confidence=90)
     if isinstance(jni_register, dict):
         for call in jni_register.get('register_calls') or []:
@@ -294,6 +316,8 @@ def build_native_method_index(*, exports: Optional[List[str]]=None, jni_register
                 continue
             for (name, desc), flags in methods.items():
                 if not isinstance(name, str) or not isinstance(desc, str):
+                    continue
+                if name == '$jnicLoader':
                     continue
                 if not isinstance(flags, int) or flags & _ACC_NATIVE == 0:
                     continue

@@ -76,6 +76,18 @@ def _jni_method_sig_to_java(sig: str) -> Optional[Tuple[str, List[str]]]:
         ret_base = ret_base + '[]' * ret_arr
     return ret_base, params
 
+def _jni_parameter_shape(sig: str) -> Optional[Tuple[str, ...]]:
+    parsed = _jni_method_sig_to_java(sig)
+    if parsed is None:
+        return None
+    shape: List[str] = []
+    for java_type in parsed[1]:
+        dimensions = len(java_type) - len(java_type.rstrip('[]'))
+        base = java_type[:-dimensions] if dimensions else java_type
+        simple = re.split(r'[.$]', base)[-1]
+        shape.append(simple + ('[]' * (dimensions // 2)))
+    return tuple(shape)
+
 def _internal_class_to_package_and_class(internal: str) -> Tuple[Optional[str], str]:
     s = str(internal).strip().strip('/')
     if not s:

@@ -1,7 +1,7 @@
 import re
 from typing import List
 
-_NATIVE_DECL_RE = re.compile('(?P<indent>^[ \\t]*)(?P<mods>(?:(?:public|private|protected|static|final|synchronized|strictfp)\\s+)*)native\\s+(?P<ret>[\\w\\[\\]<>, ?.]+?)\\s+(?P<name>\\w+)\\s*\\((?P<params>[^)]*)\\)\\s*;', re.MULTILINE)
+_NATIVE_DECL_RE = re.compile('(?P<indent>^[ \\t]*)(?P<mods>(?:(?:public|private|protected|static|final|synchronized|strictfp)\\s+)*)native\\s+(?P<ret>[\\w\\[\\]<>, ?.]+?)\\s+(?P<name>\\w+)\\s*\\((?P<params>[^)]*)\\)(?:\\s+throws\\s+[\\w$.,\\s]+)?\\s*;', re.MULTILINE)
 
 _METHOD_BODY_RE = re.compile('(?:public|private|protected|static|final|native|synchronized|abstract|\\s)+[\\w\\[\\]<>,\\s\\.]+\\s+(?P<name>\\w+)\\s*\\((?P<params>[^)]*)\\)\\s*(?:throws\\s+[\\w\\s,\\.]+)?\\s*\\{')
 

@@ -83,12 +83,12 @@ def _parse_jni_export_name(symbol: str, *, jar_meta: Optional[Dict[str, Any]]=No
     else:
         prefix_raw = body
     parts = _split_jni_export_prefix(prefix_raw)
-    if len(parts) < 2:
-        return None
     if overload_raw == _JNIC_LOADER_OVERLOAD or (isinstance(overload_raw, str) and overload_raw.startswith('00024')):
         decoded = _decode_jnic_overload(overload_raw)
-        if decoded == '$jnicLoader':
+        if decoded == '$jnicLoader' and parts:
             return {'symbol': normalized, 'raw_symbol': symbol, 'class': '/'.join(parts), 'method': '$jnicLoader', 'args_descriptor': None, 'descriptor': '()V', 'is_jnic_loader': True}
+    if len(parts) < 2:
+        return None
     best_class = None
     best_method = None
     best_score = -1

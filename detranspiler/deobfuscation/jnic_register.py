@@ -3,8 +3,7 @@ import re
 import struct
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 _DAT_ENC_RE = re.compile('(?:^|\\s)(?:local_[0-9A-Za-z_]+\\s*=\\s*)?(?:_DAT_|_UNK_|DAT_)([0-9A-Fa-f]{6,})', re.MULTILINE)
-_XOR_OFFSET_RE = re.compile('DAT_180035048\\s*\\+\\s*(0x[0-9A-Fa-f]+|\\d+)', re.IGNORECASE)
-_BYTE_XOR_LOOP_RE = re.compile('\\*\\(byte \\*\\)\\((?:longlong )?&local_([0-9A-Za-z_]+)\\s*\\+\\s*lVar\\d+\\)\\s*=\\s*\\*\\(byte \\*\\)\\((?:longlong )?&local_\\1\\s*\\+\\s*lVar\\d+\\)\\s*\\^\\s*\\*\\(byte \\*\\)\\(DAT_180035048\\s*\\+\\s*(0x[0-9A-Fa-f]+|\\d+)', re.IGNORECASE)
+_BYTE_XOR_LOOP_RE = re.compile(r'\*\(byte \*\)\((?:longlong )?&local_(?P<local>[0-9A-Za-z_]+)\s*\+\s*lVar\d+\)\s*=\s*\*\(byte \*\)\((?:longlong )?&local_(?P=local)\s*\+\s*lVar\d+\)\s*\^\s*\*\(byte \*\)\((?:_?(?:DAT|UNK)_)[0-9A-Fa-f]{6,}\s*\+\s*(?P<offset>0x[0-9A-Fa-f]+|\d+)', re.IGNORECASE)
 
 def _parse_int(raw: str) -> Optional[int]:
     raw = str(raw or '').strip()
@@ -31,7 +30,7 @@ def _read_dat_qwords(pseudo_c: str, read_u64_at_va) -> Dict[str, int]:
     return out
 
 def _extract_local_blob(block: str, local_name: str, dat_values: Dict[str, int]) -> Optional[bytes]:
-    pattern = re.compile(f'local_{re.escape(local_name)}\\s*=\\s*(?:_DAT_|_UNK_|DAT_)([0-9A-Fa-f]{ 6,} )', re.IGNORECASE)
+    pattern = re.compile(f'local_{re.escape(local_name)}\\s*=\\s*(?:_DAT_|_UNK_|DAT_)([0-9A-Fa-f]{6,})', re.IGNORECASE)
     m = pattern.search(block)
     if not m:
         return None
@@ -62,7 +61,7 @@ def _apply_block_xor(data: bytearray, *, keystream: bytes, base_offset: int, sta
 
 def _apply_paired_xor_loops(block: str, data: bytearray, keystream: bytes) -> None:
     for m in _BYTE_XOR_LOOP_RE.finditer(block):
-        offset = _parse_int(m.group(2))
+        offset = _parse_int(m.group('offset'))
         if offset is None:
             continue
         _apply_block_xor(data, keystream=keystream, base_offset=offset, start=0, end=len(data))
@@ -90,7 +89,7 @@ def decrypt_jnic_loader_register_methods(loader_block: str, *, keystream: bytes,
         return []
     dat_values = _read_dat_qwords(loader_block, read_u64_at_va)
     methods: List[Dict[str, Any]] = []
-    entry_re = re.compile('local_(?P<fn_var>[0-9A-Za-z_]+)\s*=\s*(?P<fn>FUN_[0-9A-Fa-f]+)\s*;(?:(?!local_[0-9A-Za-z_]+\s*=\s*FUN_).)*?local_(?P<name_var>[0-9A-Za-z_]+)\s*=\s*(?P<name_expr>&local_[0-9A-Za-z_]+|[0-9A-Za-z_ +]+)\s*;.*?local_(?P<sig_var>[0-9A-Za-z_]+)\s*=\s*(?P<sig_expr>&local_[0-9A-Fa-f]+|[0-9A-Za-z_ +]+)\s*;', re.DOTALL)
+    entry_re = re.compile(r'local_(?P<fn_var>[0-9A-Za-z_]+)\s*=\s*(?P<fn>FUN_[0-9A-Fa-f]+)\s*;(?:(?!local_[0-9A-Za-z_]+\s*=\s*FUN_).)*?local_(?P<name_var>[0-9A-Za-z_]+)\s*=\s*(?P<name_expr>&local_[0-9A-Za-z_]+|[0-9A-Za-z_ +]+)\s*;.*?local_(?P<sig_var>[0-9A-Za-z_]+)\s*=\s*(?P<sig_expr>&local_[0-9A-Fa-f]+|[0-9A-Za-z_ +]+)\s*;', re.DOTALL)
     for m in entry_re.finditer(loader_block):
         fn_symbol = m.group('fn')
         segment = m.group(0)
@@ -116,7 +115,7 @@ def _local_from_expr(expr: str) -> Optional[str]:
 def _first_xor_offset(segment: str, local_name: Optional[str]) -> Optional[int]:
     if not local_name:
         return None
-    pat = re.compile(f'local_{re.escape(local_name)}[\\s\\S]{ 0,1200} ?DAT_180035048\\s*\\+\\s*(0x[0-9A-Fa-f]+|\\d+)', re.IGNORECASE)
+    pat = re.compile(rf'local_{re.escape(local_name)}[\\s\\S]{{0,1200}}?(?:_?(?:DAT|UNK)_)[0-9A-Fa-f]{{6,}}\\s*\\+\\s*(0x[0-9A-Fa-f]+|\\d+)', re.IGNORECASE)
     m = pat.search(segment)
     if not m:
         return None
@@ -198,3 +197,70 @@ def _extract_function_block(pseudo_c: str, fn_name: str) -> Optional[str]:
                 return pseudo_c[start:idx + 1]
         idx += 1
     return None
+
+
+
+def enrich_jnic_register_from_jar(
+    jni_register: Optional[Dict[str, Any]],
+    *,
+    jar_meta: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """JNIC: bind encrypted RegisterNatives entries to ordered native methods from class metadata."""
+    if not isinstance(jni_register, dict) or not isinstance(jar_meta, dict):
+        return jni_register or {'status': 'SKIPPED'}
+    from detranspiler.java.jni_export_parse import _parse_jni_export_name
+
+    updated = dict(jni_register)
+    calls_out: List[Dict[str, Any]] = []
+    classes_resolved = 0
+    methods_resolved = 0
+    mismatches: List[Dict[str, Any]] = []
+    for original in updated.get('register_calls') or []:
+        if not isinstance(original, dict):
+            continue
+        call = dict(original)
+        parsed = _parse_jni_export_name(str(call.get('function') or ''), jar_meta=jar_meta)
+        if not isinstance(parsed, dict) or not parsed.get('is_jnic_loader'):
+            calls_out.append(call)
+            continue
+        class_internal = parsed.get('class')
+        class_meta = jar_meta.get(class_internal) if isinstance(class_internal, str) else None
+        method_meta = class_meta.get('methods') if isinstance(class_meta, dict) else None
+        ordered: List[Tuple[str, str]] = []
+        if isinstance(method_meta, dict):
+            for key, flags in method_meta.items():
+                if not (isinstance(key, tuple) and len(key) == 2 and isinstance(flags, int)):
+                    continue
+                name, descriptor = key
+                if flags & 0x0100 == 0 or name == '$jnicLoader':
+                    continue
+                if isinstance(name, str) and isinstance(descriptor, str):
+                    ordered.append((name, descriptor))
+        methods = [dict(item) for item in call.get('methods') or [] if isinstance(item, dict)]
+        if not class_internal or len(ordered) != len(methods):
+            mismatches.append({
+                'function': call.get('function'),
+                'class': class_internal,
+                'registered_count': len(methods),
+                'jar_native_count': len(ordered),
+            })
+            calls_out.append(call)
+            continue
+        call['class'] = class_internal
+        call['class_source'] = 'jnic_loader_export'
+        for index, method in enumerate(methods):
+            name, descriptor = ordered[index]
+            method['name'] = name
+            method['signature'] = descriptor
+            method['mapping_source'] = 'jar_native_order'
+            methods_resolved += 1
+        call['methods'] = methods
+        call['methods_parsed'] = len(methods)
+        classes_resolved += 1
+        calls_out.append(call)
+    updated['register_calls'] = calls_out
+    updated['jnic_jar_classes_resolved'] = classes_resolved
+    updated['jnic_jar_methods_resolved'] = methods_resolved
+    if mismatches:
+        updated['jnic_jar_mapping_mismatches'] = mismatches
+    return updated

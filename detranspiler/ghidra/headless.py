@@ -46,5 +46,56 @@ def run_headless_decompile(*, ghidra_install_dir: Path, binary_path: Path, proje
     output_c_ok = output_c_path.is_file()
     output_functions_ok = output_functions_json_path.is_file() if output_functions_json_path is not None else None
     output_strings_ok = output_strings_json_path.is_file() if output_strings_json_path is not None else None
-    ok = p.returncode == 0 and (output_c_ok or bool(output_functions_ok) or bool(output_strings_ok))
+    requested_outputs_ok = output_c_ok
+    if output_functions_json_path is not None:
+        requested_outputs_ok = requested_outputs_ok and bool(output_functions_ok)
+    if output_strings_json_path is not None:
+        requested_outputs_ok = requested_outputs_ok and bool(output_strings_ok)
+    ok = p.returncode == 0 and requested_outputs_ok
     return {'status': 'OK' if ok else 'ERROR', 'returncode': p.returncode, 'stdout_path': str(stdout_path.resolve()) if stdout_path else None, 'stderr_path': str(stderr_path.resolve()) if stderr_path else None, 'output_c_path': str(output_c_path.resolve()) if output_c_path.is_file() else None, 'output_functions_json_path': str(output_functions_json_path.resolve()) if output_functions_json_path is not None and output_functions_json_path.is_file() else None, 'output_strings_json_path': str(output_strings_json_path.resolve()) if output_strings_json_path is not None and output_strings_json_path.is_file() else None, 'project_dir': str(project_dir.resolve())}
+
+def run_headless_decompile_targets(*, ghidra_install_dir: Path, project_dir: Path, project_name: str, program_name: str, targets_path: Path, output_c_path: Path, logs_dir: Optional[Path]=None, timeout_seconds: int=15 * 60) -> Dict[str, Any]:
+    analyze_headless = _resolve_analyze_headless(ghidra_install_dir)
+    script_dir = Path(__file__).resolve().parent / 'scripts'
+    script_file = script_dir / 'DecompileTargets.java'
+    if not script_file.is_file():
+        raise FileNotFoundError(str(script_file))
+    output_c_path.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [str(analyze_headless), str(project_dir), project_name, '-process', program_name, '-scriptPath', str(script_dir), '-postScript', 'DecompileTargets.java', str(targets_path), str(output_c_path)]
+    if analyze_headless.suffix.lower() in {'.bat', '.cmd'}:
+        cmd = ['cmd.exe', '/c', *cmd]
+    process = subprocess.run(cmd, capture_output=True, text=True, env=os.environ.copy(), timeout=timeout_seconds)
+    stdout_path = None
+    stderr_path = None
+    if logs_dir is not None:
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        stdout_path = logs_dir / 'ghidra_targets_stdout.txt'
+        stderr_path = logs_dir / 'ghidra_targets_stderr.txt'
+        stdout_path.write_text(process.stdout or '', encoding='utf-8', errors='replace')
+        stderr_path.write_text(process.stderr or '', encoding='utf-8', errors='replace')
+    ok = process.returncode == 0 and output_c_path.is_file()
+    return {
+        'status': 'OK' if ok else 'ERROR',
+        'returncode': process.returncode,
+        'output_c_path': str(output_c_path.resolve()) if output_c_path.is_file() else None,
+        'stdout_path': str(stdout_path.resolve()) if stdout_path else None,
+        'stderr_path': str(stderr_path.resolve()) if stderr_path else None,
+    }
+
+def run_headless_export_functions(*, ghidra_install_dir: Path, project_dir: Path, project_name: str, program_name: str, output_functions_json_path: Path, logs_dir: Optional[Path]=None, timeout_seconds: int=15 * 60) -> Dict[str, Any]:
+    analyze_headless = _resolve_analyze_headless(ghidra_install_dir)
+    script_dir = Path(__file__).resolve().parent / 'scripts'
+    script_file = script_dir / 'ExportFunctionsJson.java'
+    if not script_file.is_file():
+        raise FileNotFoundError(str(script_file))
+    output_functions_json_path.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [str(analyze_headless), str(project_dir), project_name, '-process', program_name, '-noanalysis', '-scriptPath', str(script_dir), '-postScript', 'ExportFunctionsJson.java', str(output_functions_json_path)]
+    if analyze_headless.suffix.lower() in {'.bat', '.cmd'}:
+        cmd = ['cmd.exe', '/c', *cmd]
+    process = subprocess.run(cmd, capture_output=True, text=True, env=os.environ.copy(), timeout=timeout_seconds)
+    if logs_dir is not None:
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        (logs_dir / 'ghidra_functions_refresh_stdout.txt').write_text(process.stdout or '', encoding='utf-8', errors='replace')
+        (logs_dir / 'ghidra_functions_refresh_stderr.txt').write_text(process.stderr or '', encoding='utf-8', errors='replace')
+    ok = process.returncode == 0 and output_functions_json_path.is_file()
+    return {'status': 'OK' if ok else 'ERROR', 'returncode': process.returncode, 'output_functions_json_path': str(output_functions_json_path.resolve()) if output_functions_json_path.is_file() else None}

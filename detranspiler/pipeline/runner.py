@@ -54,6 +54,8 @@ def run_pipeline(*, input_path: Path, out_dir: Path, requested_mode: str='AUTO',
     else:
         ghidra_state = 'ENABLED'
     ghidra_status: Dict[str, Any] = {'requested': bool(use_ghidra), 'install_dir': str(ghidra_install_dir) if ghidra_install_dir else None, 'enabled': ghidra_enabled, 'state': ghidra_state, 'run': None, 'output_c_path': None, 'output_functions_json_path': None, 'output_strings_json_path': None}
+    project_dir: Optional[Path] = None
+    project_name: Optional[str] = None
     write_json(ghidra_dir / 'status.json', ghidra_status)
     job_id = str(uuid.uuid4())
     job: Dict[str, Any] = {'job_id': job_id, 'created_at': utc_now_iso(), 'input': {'path': str(input_path.resolve()), 'name': input_path.name, 'size': input_path.stat().st_size, 'sha256': sha256, 'format': fmt}, 'mode': {'requested': requested_mode, 'resolved': resolved_mode}, 'analysis': {'lief': lief_meta, 'exports_count': len(exports), 'imports_count': len(imports), 'strings_count': len(strings)}, 'jni': {'detected': jni_detected, 'hits': jni_hits}, 'ghidra': ghidra_status, 'artifacts': {'out_dir': str(out_dir.resolve()), 'job_json': str((out_dir / 'job.json').resolve()), 'metadata_dir': str(metadata_dir.resolve()), 'preprocess_dir': str(preprocess_dir.resolve()), 'ghidra_dir': str(ghidra_dir.resolve()), 'pseudo_c_dir': str(pseudo_c_dir.resolve()), 'pseudocode_dir': str(pseudocode_dir.resolve()), 'analysis_dir': str(analysis_dir.resolve()), 'logs_dir': str(logs_dir.resolve()), 'pseudo_c_file': None, 'ghidra_functions_json': None, 'ghidra_strings_json': None, 'jni_register_json': None, 'jni_calls_json': None, 'deobfuscation_json': None, 'java_like_file': None, 'jni_export_sources_dir': None, 'jni_export_manifest': None, 'report_html': None, 'jni_stubs_file': None, 'jar_decompile_dir': None}}
@@ -166,6 +168,7 @@ def run_pipeline(*, input_path: Path, out_dir: Path, requested_mode: str='AUTO',
     write_json(jni_register_path, jni_register_res)
     job['artifacts']['jni_register_json'] = str(jni_register_path.resolve())
     jnic_keystream_res: Dict[str, Any] = {'status': 'SKIPPED'}
+    jnic_keystream_bytes: Optional[bytes] = None
     if isinstance(jnic_patterns_res, dict) and jnic_patterns_res.get('transpiler_guess') == 'JNIC':
         try:
             from detranspiler.deobfuscation.jnic_keystream import build_jnic_keystream
@@ -185,8 +188,9 @@ def run_pipeline(*, input_path: Path, out_dir: Path, requested_mode: str='AUTO',
                 except Exception:
                     strings_by_addr = {}
             pe_ctx = build_pe_context(pseudo_c_text=pseudo_c_text, pseudo_c_path=pseudo_c_path, jni_register=jni_register_res if isinstance(jni_register_res, dict) else None, binary_path=copied_input if copied_input.is_file() else None, extra_seed_strings=[], jar_meta={})
-            jnic_keystream_res = build_jnic_keystream(pseudo_c=pseudo_c_text, binary_path=copied_input if copied_input.is_file() else None, read_u64_at_va=pe_ctx.get('read_u64_at_va'), strings_by_addr=strings_by_addr or None)
+            jnic_keystream_res = build_jnic_keystream(pseudo_c=pseudo_c_text, binary_path=copied_input if copied_input.is_file() else None, read_u64_at_va=pe_ctx.get('read_u64_at_va'), strings_by_addr=strings_by_addr or None, jar_path=jar_path)
             if isinstance(jnic_keystream_res, dict) and jnic_keystream_res.get('keystream'):
+                jnic_keystream_bytes = bytes(jnic_keystream_res['keystream'])
                 jni_register_res = enrich_jnic_register_calls(jni_register_res if isinstance(jni_register_res, dict) else None, pseudo_c=pseudo_c_text, keystream=jnic_keystream_res.get('keystream'), read_u64_at_va=pe_ctx.get('read_u64_at_va'))
                 write_json(jni_register_path, jni_register_res)
                 jnic_keystream_res = {k: v for k, v in jnic_keystream_res.items() if k != 'keystream'}
@@ -194,11 +198,72 @@ def run_pipeline(*, input_path: Path, out_dir: Path, requested_mode: str='AUTO',
         except Exception as e:
             jnic_keystream_res = {'status': 'EXCEPTION', 'error': repr(e)}
     job['analysis']['jnic_keystream'] = jnic_keystream_res
+    jnic_dispatch_res: Dict[str, Any] = {'status': 'SKIPPED'}
+    jnic_instruction_aliases: Dict[str, str] = {}
+    if jnic_keystream_bytes and ghidra_enabled and project_dir is not None and project_name is not None and pseudo_c_path is not None:
+        try:
+            from detranspiler.deobfuscation.jnic_dispatch import merge_dispatch_pseudoc, resolve_jnic_dispatch_targets, write_dispatch_targets
+            from detranspiler.ghidra.headless import run_headless_decompile_targets, run_headless_export_functions
+            seen_targets: set[tuple[str, str]] = set()
+            all_targets: List[Dict[str, Any]] = []
+            dispatch_runs: List[Dict[str, Any]] = []
+            recovered_count = 0
+            last_targets_c_path: Optional[Path] = None
+            max_dispatch_iterations = 10
+            max_dispatch_targets = 512
+            for iteration in range(max_dispatch_iterations):
+                discovered = resolve_jnic_dispatch_targets(pseudo_c=pseudo_c_text or '', binary_path=copied_input, keystream=jnic_keystream_bytes, jni_register=jni_register_res)
+                targets = [item for item in discovered if (str(item.get('function')), str(item.get('target'))) not in seen_targets]
+                targets = targets[:max(0, max_dispatch_targets - len(seen_targets))]
+                if not targets:
+                    break
+                for item in targets:
+                    seen_targets.add((str(item.get('function')), str(item.get('target'))))
+                all_targets.extend(targets)
+                iteration_targets_path = analysis_dir / f'jnic_dispatch_targets_{iteration + 1}.txt'
+                targets_c_path = pseudo_c_dir / f'jnic_dispatch_targets_{iteration + 1}.c'
+                last_targets_c_path = targets_c_path
+                write_dispatch_targets(iteration_targets_path, targets)
+                target_run = run_headless_decompile_targets(ghidra_install_dir=ghidra_install_dir, project_dir=project_dir, project_name=project_name, program_name=copied_input.name, targets_path=iteration_targets_path, output_c_path=targets_c_path, logs_dir=logs_dir)
+                dispatch_runs.append(target_run)
+                recovered_text = targets_c_path.read_text(encoding='utf-8', errors='replace') if targets_c_path.is_file() else ''
+                iteration_count = recovered_text.count('/* FUNCTION ')
+                recovered_count += iteration_count
+                if not iteration_count:
+                    break
+                if len(seen_targets) >= max_dispatch_targets:
+                    break
+                pseudo_c_text = merge_dispatch_pseudoc(pseudo_c_text or '', recovered_text)
+                pseudo_c_path.write_text(pseudo_c_text, encoding='utf-8', errors='replace')
+            targets_path = analysis_dir / 'jnic_dispatch_targets.txt'
+            write_dispatch_targets(targets_path, all_targets)
+            jnic_instruction_aliases = {
+                str(item.get('target') or '').lower().removeprefix('0x'): str(item.get('function'))
+                for item in all_targets if item.get('target') and item.get('function')
+            }
+            functions_refresh = None
+            if all_targets and functions_json_path is not None:
+                functions_refresh = run_headless_export_functions(ghidra_install_dir=ghidra_install_dir, project_dir=project_dir, project_name=project_name, program_name=copied_input.name, output_functions_json_path=functions_json_path, logs_dir=logs_dir)
+            dispatch_status = 'OK' if dispatch_runs and all(run.get('status') == 'OK' for run in dispatch_runs) else 'ERROR' if dispatch_runs else 'SKIPPED'
+            jnic_dispatch_res = {'status': dispatch_status, 'targets_total': len(all_targets), 'targets_decompiled': recovered_count, 'iterations': len(dispatch_runs), 'runs': dispatch_runs, 'functions_refresh': functions_refresh}
+            job['artifacts']['jnic_dispatch_targets'] = str(targets_path.resolve())
+            if last_targets_c_path is not None:
+                job['artifacts']['jnic_dispatch_pseudo_c'] = str(last_targets_c_path.resolve())
+        except Exception as error:
+            jnic_dispatch_res = {'status': 'EXCEPTION', 'error': repr(error)}
+    job['analysis']['jnic_dispatch'] = jnic_dispatch_res
     jni_calls_res: Dict[str, Any]
     jni_calls_path = analysis_dir / 'jni_calls.json'
     try:
         from detranspiler.jni.calls import extract_jni_calls
-        jni_calls_res = extract_jni_calls(pseudo_c_path=pseudo_c_path, strings_json_path=strings_json_path if strings_json_path.is_file() else None, binary_path=copied_input if copied_input.is_file() else None)
+        jni_calls_res = extract_jni_calls(pseudo_c_path=pseudo_c_path, strings_json_path=strings_json_path if strings_json_path is not None and strings_json_path.is_file() else None, binary_path=copied_input if copied_input.is_file() else None)
+        if isinstance(jnic_patterns_res, dict) and jnic_patterns_res.get('transpiler_guess') == 'JNIC':
+            from detranspiler.deobfuscation.jnic_instructions import augment_jni_calls_from_instructions
+            from detranspiler.deobfuscation.jnic_locals import enrich_jni_calls_with_local_strings
+            jni_calls_res = augment_jni_calls_from_instructions(jni_calls_res, functions_json_path=functions_json_path, function_aliases=jnic_instruction_aliases)
+            read_u64_at_va = pe_ctx.get('read_u64_at_va') if isinstance(pe_ctx, dict) else None
+            if callable(read_u64_at_va):
+                jni_calls_res = enrich_jni_calls_with_local_strings(jni_calls_res, pseudo_c=pseudo_c_text, read_u64_at_va=read_u64_at_va, keystream=jnic_keystream_bytes)
     except Exception as e:
         jni_calls_res = {'status': 'EXCEPTION', 'error': repr(e)}
     write_json(jni_calls_path, jni_calls_res)
@@ -305,6 +370,16 @@ def run_pipeline(*, input_path: Path, out_dir: Path, requested_mode: str='AUTO',
         from detranspiler.jar.scan import _jar_scan_classes
         from detranspiler.native.index import augment_native_index_from_java_sources, augment_native_index_with_jni_register, build_native_method_index
         jar_meta = _jar_scan_classes(jar_path) if jar_path is not None else None
+        if isinstance(jar_meta, dict) and isinstance(jni_calls_res, dict) and jnic_patterns_res.get('transpiler_guess') == 'JNIC':
+            from detranspiler.deobfuscation.jnic_locals import enrich_jni_calls_from_jar
+            jni_calls_res = enrich_jni_calls_from_jar(jni_calls_res, jar_meta=jar_meta)
+            job['analysis']['jni_calls'] = jni_calls_res
+            write_json(jni_calls_path, jni_calls_res)
+        if isinstance(jar_meta, dict) and isinstance(jni_register_res, dict) and jnic_patterns_res.get('transpiler_guess') == 'JNIC':
+            from detranspiler.deobfuscation.jnic_register import enrich_jnic_register_from_jar
+            jni_register_res = enrich_jnic_register_from_jar(jni_register_res, jar_meta=jar_meta)
+            job['analysis']['jni_register'] = jni_register_res
+            write_json(jni_register_path, jni_register_res)
         native_index_res = build_native_method_index(exports=exports, jni_register=jni_register_res if isinstance(jni_register_res, dict) else None, jni_calls=jni_calls_res if isinstance(jni_calls_res, dict) else None, java_like=java_like_res if isinstance(java_like_res, dict) else None, jar_meta=jar_meta)
         jar_sources_index = pseudocode_dir / 'jar_sources'
         if jar_sources_index.is_dir():
@@ -343,7 +418,7 @@ def run_pipeline(*, input_path: Path, out_dir: Path, requested_mode: str='AUTO',
     jnic_overlay_res: Dict[str, Any] = {'status': 'SKIPPED'}
     try:
         from detranspiler.jar.jnic import build_jnic_overlay_sources
-        jnic_overlay_res = build_jnic_overlay_sources(pseudocode_dir=pseudocode_dir, exports=exports, jni_register=jni_register_res if isinstance(jni_register_res, dict) else None, jnic_patterns=jnic_patterns_res if isinstance(jnic_patterns_res, dict) else None, native_index=native_index_res if isinstance(native_index_res, dict) else None, pseudo_c_path=pseudo_c_path, functions_json_path=functions_json_path, jni_calls=jni_calls_res if isinstance(jni_calls_res, dict) else None, binary_path=copied_input if copied_input.is_file() else None, callgraph=callgraph_res if isinstance(callgraph_res, dict) else None, flattening=flattening_res if isinstance(flattening_res, dict) else None, anti_analysis=anti_analysis_res if isinstance(anti_analysis_res, dict) else None, string_decrypt=string_decrypt_res if isinstance(string_decrypt_res, dict) else None, string_symbol_map=string_symbol_map if string_symbol_map else None)
+        jnic_overlay_res = build_jnic_overlay_sources(pseudocode_dir=pseudocode_dir, jar_path=jar_path, exports=exports, jni_register=jni_register_res if isinstance(jni_register_res, dict) else None, jnic_patterns=jnic_patterns_res if isinstance(jnic_patterns_res, dict) else None, native_index=native_index_res if isinstance(native_index_res, dict) else None, pseudo_c_path=pseudo_c_path, functions_json_path=functions_json_path, jni_calls=jni_calls_res if isinstance(jni_calls_res, dict) else None, binary_path=copied_input if copied_input.is_file() else None, callgraph=callgraph_res if isinstance(callgraph_res, dict) else None, flattening=flattening_res if isinstance(flattening_res, dict) else None, anti_analysis=anti_analysis_res if isinstance(anti_analysis_res, dict) else None, string_decrypt=string_decrypt_res if isinstance(string_decrypt_res, dict) else None, string_symbol_map=string_symbol_map if string_symbol_map else None)
         if jnic_overlay_res.get('output_dir'):
             job['artifacts']['jnic_sources_dir'] = jnic_overlay_res.get('output_dir')
         if jnic_overlay_res.get('manifest_path'):
@@ -352,7 +427,7 @@ def run_pipeline(*, input_path: Path, out_dir: Path, requested_mode: str='AUTO',
         jnic_overlay_res = {'status': 'EXCEPTION', 'pattern': 'jnic', 'error': repr(e)}
     job['analysis']['jnic'] = jnic_overlay_res
     jar_native_decl_repair: Dict[str, Any] = {'status': 'SKIPPED'}
-    if radioegor_res.get('status') != 'OK':
+    if radioegor_res.get('status') != 'OK' and jnic_overlay_res.get('status') != 'OK':
         try:
             from detranspiler.jar.repair import repair_jar_native_declarations
             jar_native_decl_repair = repair_jar_native_declarations(pseudocode_dir=pseudocode_dir, native_index=native_index_res if isinstance(native_index_res, dict) else None, job=job, source_subdirs=('jar_sources',), in_place=True)

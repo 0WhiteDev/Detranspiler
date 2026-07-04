@@ -82,6 +82,16 @@ def _find_version_ptr(pseudo_c: str, strings: Optional[Dict[int, str]]=None) -> 
                 pass
     return None
 
+def _find_version_pointer_symbol(pseudo_c: str) -> Optional[int]:
+    match = re.search(r'PTR_s_jnic_dev[^\s]*_([0-9A-Fa-f]{6,})', pseudo_c)
+    if not match:
+        return None
+    try:
+        return int(match.group(1), 16)
+    except ValueError:
+        return None
+
+
 def _find_key_ptr(pseudo_c: str) -> Optional[int]:
     m = re.search('uStack_d8\\s*=\\s*_DAT_([0-9A-Fa-f]{6,})', pseudo_c)
     if m:
@@ -91,46 +101,126 @@ def _find_key_ptr(pseudo_c: str) -> Optional[int]:
             return None
     return None
 
-def _buffer_word_candidates(data: bytes, *, version_ptr_va: int, read_u64_at_va: ReadU64, image_base: int=6442450944) -> List[Tuple[int, int, int]]:
-    candidates: List[Tuple[int, int, int]] = []
-    seen: set[Tuple[int, int, int]] = set()
+def _cp_member(cp: Sequence[object], index: int) -> Optional[Tuple[str, str, str]]:
+    if not 0 < index < len(cp):
+        return None
+    ref = cp[index]
+    if not (isinstance(ref, tuple) and len(ref) >= 3 and ref[0] in {'Methodref', 'InterfaceMethodref'}):
+        return None
+    class_info = cp[ref[1]] if isinstance(ref[1], int) and 0 < ref[1] < len(cp) else None
+    name_type = cp[ref[2]] if isinstance(ref[2], int) and 0 < ref[2] < len(cp) else None
+    if not (isinstance(class_info, tuple) and len(class_info) == 2 and class_info[0] == 'Class'):
+        return None
+    if not (isinstance(name_type, tuple) and len(name_type) == 3 and name_type[0] == 'NameAndType'):
+        return None
+    owner = cp[class_info[1]] if isinstance(class_info[1], int) and 0 < class_info[1] < len(cp) else None
+    name = cp[name_type[1]] if isinstance(name_type[1], int) and 0 < name_type[1] < len(cp) else None
+    descriptor = cp[name_type[2]] if isinstance(name_type[2], int) and 0 < name_type[2] < len(cp) else None
+    if all(isinstance(value, str) for value in (owner, name, descriptor)):
+        return owner, name, descriptor
+    return None
 
-    def add(base_va: int) -> None:
-        words = _read_u32_seq(data, base_va + 32, 3, read_u64_at_va)
-        if len(words) == 3:
-            key = (words[0], words[1], words[2])
-            if key not in seen:
-                seen.add(key)
-                candidates.append(key)
-    for base in range(image_base + 197120, image_base + 197632, 4):
-        add(base)
-    add(version_ptr_va)
-    return candidates
+
+def _bytecode_instructions(code: bytes):
+    one = {0x10, 0x12, 0x15, 0x16, 0x17, 0x18, 0x19, 0x36, 0x37, 0x38, 0x39, 0x3a, 0xa9, 0xbc}
+    two = {0x11, 0x13, 0x14, 0x84, *range(0x99, 0xa9), 0xc6, 0xc7,
+           0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xbb, 0xbd, 0xc0, 0xc1}
+    four = {0xb9, 0xba, 0xc8, 0xc9}
+    pc = 0
+    while pc < len(code):
+        start = pc
+        opcode = code[pc]
+        pc += 1
+        if opcode == 0xaa:
+            pc += (-pc) & 3
+            if pc + 12 > len(code):
+                return
+            low = struct.unpack_from('>i', code, pc + 4)[0]
+            high = struct.unpack_from('>i', code, pc + 8)[0]
+            pc += 12 + max(0, high - low + 1) * 4
+        elif opcode == 0xab:
+            pc += (-pc) & 3
+            if pc + 8 > len(code):
+                return
+            pairs = struct.unpack_from('>i', code, pc + 4)[0]
+            pc += 8 + max(0, pairs) * 8
+        elif opcode == 0xc4:
+            if pc >= len(code):
+                return
+            modified = code[pc]
+            pc += 5 if modified == 0x84 else 3
+        elif opcode in one:
+            pc += 1
+        elif opcode in two:
+            pc += 2
+        elif opcode == 0xc5:
+            pc += 3
+        elif opcode in four:
+            pc += 4
+        if pc > len(code):
+            return
+        yield start, opcode, code[start + 1:pc]
+
+
+def _integer_constant(cp: Sequence[object], index: int) -> Optional[int]:
+    if not 0 < index < len(cp):
+        return None
+    value = cp[index]
+    if isinstance(value, tuple) and len(value) == 2 and value[0] == 'Integer' and isinstance(value[1], int):
+        return value[1] & 0xffffffff
+    return None
+
+
+def _jnic_buffer_words_from_jar(jar_path: Optional[Path]) -> Optional[Tuple[int, int, int]]:
+    if jar_path is None or not Path(jar_path).is_file():
+        return None
+    try:
+        from detranspiler.jar.scan import _jar_scan_classes
+        classes = _jar_scan_classes(Path(jar_path))
+    except Exception:
+        return None
+    matches: List[Tuple[int, int, int]] = []
+    for class_name, class_meta in (classes or {}).items():
+        if not isinstance(class_name, str) or class_name.rsplit('/', 1)[-1] != 'JNICLoader':
+            continue
+        if not isinstance(class_meta, dict):
+            continue
+        code = (class_meta.get('methods_code') or {}).get(('<clinit>', '()V'))
+        cp = class_meta.get('cp')
+        if not isinstance(code, bytes) or not isinstance(cp, list):
+            continue
+        last_integer: Optional[int] = None
+        puts: List[int] = []
+        for _pc, opcode, operands in _bytecode_instructions(code):
+            if 0x02 <= opcode <= 0x08:
+                last_integer = (opcode - 3) & 0xffffffff
+            elif opcode == 0x10 and operands:
+                last_integer = struct.unpack('>b', operands)[0] & 0xffffffff
+            elif opcode == 0x11 and len(operands) == 2:
+                last_integer = struct.unpack('>h', operands)[0] & 0xffffffff
+            elif opcode == 0x12 and operands:
+                last_integer = _integer_constant(cp, operands[0])
+            elif opcode in {0x13, 0x14} and len(operands) >= 2:
+                last_integer = _integer_constant(cp, struct.unpack('>H', operands[:2])[0])
+            elif opcode in {0xb6, 0xb7, 0xb8, 0xb9} and len(operands) >= 2:
+                member = _cp_member(cp, struct.unpack('>H', operands[:2])[0])
+                if member == ('java/nio/ByteBuffer', 'putInt', '(I)Ljava/nio/ByteBuffer;') and last_integer is not None:
+                    puts.append(last_integer)
+                last_integer = None
+        # JNIC appends four platform-independent words after all platform branches.
+        if len(puts) >= 4:
+            matches.append((puts[-4], puts[-3], puts[-2]))
+    unique = list(dict.fromkeys(matches))
+    return unique[0] if len(unique) == 1 else None
+
+
+def _buffer_word_candidates(*, jar_path: Optional[Path]) -> List[Tuple[int, int, int]]:
+    words = _jnic_buffer_words_from_jar(jar_path)
+    return [words] if words is not None else []
 
 def _score_keystream_on_register_blobs(keystream: bytes, *, data: bytes, read_u64_at_va: ReadU64, pseudo_c: str) -> int:
-    score = 0
-    probes = [(6442648892, 5320, 24), (6442648915, 5343, 24), (6442648939, 5367, 24), (6442647808, 6571, 16)]
-    for va, offset, size in probes:
-        enc = _read_bytes(data, va, size, read_u64_at_va)
-        if not enc:
-            continue
-        plain = bytes((b ^ keystream[offset + i] for i, b in enumerate(enc) if offset + i < len(keystream)))
-        text = plain.split(b'\x00')[0]
-        if not text:
-            continue
-        try:
-            decoded = text.decode('utf-8')
-        except Exception:
-            continue
-        if not decoded:
-            continue
-        if decoded.startswith('(') and ')' in decoded:
-            score += 40
-        if decoded.replace('/', '').replace('_', '').replace('$', '').isalnum():
-            score += 20
-        if all((ch.isprintable() for ch in decoded)):
-            score += 10
-    return score
+    return 0
+
 
 def _read_bytes(data: bytes, va: int, size: int, read_u64_at_va: ReadU64) -> bytes:
     try:
@@ -142,7 +232,7 @@ def _read_bytes(data: bytes, va: int, size: int, read_u64_at_va: ReadU64) -> byt
     except Exception:
         return b''
 
-def build_jnic_keystream(*, binary_path: Optional[Path]=None, pseudo_c: Optional[str]=None, read_u64_at_va: Optional[ReadU64]=None, strings_by_addr: Optional[Dict[int, str]]=None, params: Optional[JnicKeystreamParams]=None) -> Dict[str, object]:
+def build_jnic_keystream(*, binary_path: Optional[Path]=None, pseudo_c: Optional[str]=None, read_u64_at_va: Optional[ReadU64]=None, strings_by_addr: Optional[Dict[int, str]]=None, jar_path: Optional[Path]=None, params: Optional[JnicKeystreamParams]=None) -> Dict[str, object]:
     if not isinstance(pseudo_c, str) or not pseudo_c.strip():
         return {'status': 'SKIPPED_NO_PSEUDOC'}
     if read_u64_at_va is None and (binary_path is None or not binary_path.is_file()):
@@ -171,24 +261,26 @@ def build_jnic_keystream(*, binary_path: Optional[Path]=None, pseudo_c: Optional
         key_ptr_va = _find_key_ptr(pseudo_c)
     if version_ptr_va is None or key_ptr_va is None:
         return {'status': 'SKIPPED_NO_CONSTANTS', 'version_ptr_va': version_ptr_va, 'key_ptr_va': key_ptr_va}
+    pointer_symbol = _find_version_pointer_symbol(pseudo_c)
+    if isinstance(pointer_symbol, int):
+        target = _resolve_ptr(data, pointer_symbol, read_u64_at_va)
+        if isinstance(target, int):
+            target_words = _read_u32_seq(data, target, 4, read_u64_at_va)
+            marker = b''.join(struct.pack('<I', word) for word in target_words).lower()
+            if len(target_words) == 4 and b'jnic.dev' in marker:
+                version_ptr_va = target
     version_words = _read_u32_seq(data, version_ptr_va, 4, read_u64_at_va)
-    if len(version_words) < 4:
-        ptr_sym_va = _find_version_ptr(pseudo_c, None)
-        if isinstance(ptr_sym_va, int):
-            target = _resolve_ptr(data, ptr_sym_va, read_u64_at_va)
-            if isinstance(target, int):
-                version_words = _read_u32_seq(data, target, 4, read_u64_at_va)
     key_words = _read_u32_seq(data, key_ptr_va, 8, read_u64_at_va)
     if len(version_words) < 4 or len(key_words) < 8:
         return {'status': 'SKIPPED_INCOMPLETE_CONSTANTS', 'version_words': len(version_words), 'key_words': len(key_words)}
-    candidates = _buffer_word_candidates(data, version_ptr_va=version_ptr_va, read_u64_at_va=read_u64_at_va)
+    candidates = _buffer_word_candidates(jar_path=jar_path)
     if not candidates:
-        candidates = [(0, 0, 0)]
+        return {'status': 'SKIPPED_NO_BUFFER_SEED', 'source': 'jar_bytecode'}
     best: Optional[Dict[str, object]] = None
     for buffer_words in candidates:
         keystream = generate_jnic_onload_keystream(local_e8=version_words[0], uStack_e4=version_words[1], uStack_e0=version_words[2], uStack_dc=version_words[3], uStack_d8=key_words[0], uStack_d8_hi=key_words[1], uStack_d0=key_words[2], uStack_d0_hi=key_words[3], uStack_c8=key_words[4], uStack_c8_hi=key_words[5], uStack_c0=key_words[6], uStack_c0_hi=key_words[7], uStack_b4=buffer_words[0], uStack_b0=buffer_words[1], uStack_ac=buffer_words[2], length=length)
         score = _score_keystream_on_register_blobs(keystream, data=data, read_u64_at_va=read_u64_at_va, pseudo_c=pseudo_c)
-        item = {'status': 'OK', 'length': length, 'buffer_words': list(buffer_words), 'score': score, 'keystream_hex': keystream[:256].hex()}
+        item = {'status': 'OK', 'length': length, 'buffer_words': list(buffer_words), 'buffer_words_source': 'jar_bytecode', 'score': score, 'keystream_hex': keystream[:256].hex()}
         if best is None or int(item['score']) > int(best['score']):
             best = item
             best['keystream'] = keystream

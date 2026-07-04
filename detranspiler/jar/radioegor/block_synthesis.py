@@ -360,8 +360,6 @@ def _method_targets_are_actionable(method_targets: List[Dict[str, Any]]) -> bool
         return False
     if len(names) == 1 and names[0].startswith('get') and names[0].endswith('Code'):
         return False
-    if set(names) <= {'get', 'lightMeUp'}:
-        return False
     return True
 
 
