@@ -10,14 +10,14 @@ from detranspiler.binary.reader import BinaryReader
 
 _DISPATCH_RE = re.compile(
     r'&DAT_(?P<base>[0-9A-Fa-f]+)\s*\+\s*\*\(int\s*\*\)\(&DAT_(?P=base)\s*\+'
-    r'\s*\(ulonglong\)\(\(\*\(uint\s*\*\)\(DAT_[0-9A-Fa-f]+\s*\+\s*'
+    r'\s*\(ulonglong\)\s*\(\(\*\(uint\s*\*\)\(DAT_[0-9A-Fa-f]+\s*\+\s*'
     r'(?P<offset>0x[0-9A-Fa-f]+|\d+)\)\s*\^\s*(?P<key>0x[0-9A-Fa-f]+)\)'
     r'\s*\+\s*(?P<shift>0x[0-9A-Fa-f]+|\d+)\)\s*\*\s*4\)',
     re.DOTALL,
 )
 _RELATIVE_DISPATCH_RE = re.compile(
     r'\*\(int\s*\*\)\(\s*(?P<base>[A-Za-z_]\w*)\s*\+'
-    r'\s*\(ulonglong\)\(\(\*\(uint\s*\*\)\((?:DAT_[0-9A-Fa-f]+|[A-Za-z_]\w*)\s*\+'
+    r'\s*\(ulonglong\)\s*\(\(\*\(uint\s*\*\)\((?:DAT_[0-9A-Fa-f]+|[A-Za-z_]\w*)\s*\+'
     r'\s*(?P<offset>0x[0-9A-Fa-f]+|\d+)\)\s*\^\s*(?P<key>0x[0-9A-Fa-f]+)\)'
     r'\s*\+\s*(?P<shift>0x[0-9A-Fa-f]+|\d+)\)\s*\*\s*4\)\s*\+\s*(?P=base)',
     re.DOTALL,

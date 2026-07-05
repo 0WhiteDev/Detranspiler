@@ -365,7 +365,8 @@ def build_jnic_overlay_sources(*, pseudocode_dir: Path, jar_path: Optional[Path]
     if functions_json_path is None:
         candidate = pseudocode_dir.parent / 'ghidra' / 'functions.json'
         functions_json_path = candidate if candidate.is_file() else None
-    state = build_generation_state(exports=list(exports or []), pseudo_c_path=pseudo_c_path, functions_json_path=functions_json_path, jni_register=jni_register, jni_calls=jni_calls, jar_path=jar_path, binary_path=binary_path, callgraph=callgraph, flattening=flattening, anti_analysis=anti_analysis, string_decrypt=string_decrypt, string_symbol_map=string_symbol_map)
+    pseudo_c_char_limit = max(2_000_000, pseudo_c_path.stat().st_size) if pseudo_c_path is not None and pseudo_c_path.is_file() else 2_000_000
+    state = build_generation_state(exports=list(exports or []), pseudo_c_path=pseudo_c_path, functions_json_path=functions_json_path, max_pseudo_c_chars=pseudo_c_char_limit, jni_register=jni_register, jni_calls=jni_calls, jar_path=jar_path, binary_path=binary_path, callgraph=callgraph, flattening=flattening, anti_analysis=anti_analysis, string_decrypt=string_decrypt, string_symbol_map=string_symbol_map)
     state.native_index = native_index
     jnic_dir = pseudocode_dir / 'jnic'
     export_dir = pseudocode_dir / 'jni_exports'
