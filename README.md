@@ -185,6 +185,25 @@ The GUI supports fresh analysis, loading an existing output folder (`job.json`),
 
 ---
 
+## Desktop GUI
+
+The desktop GUI provides the complete workflow in one workspace: configure or load an analysis, extract native libraries from JAR files, inspect reports and the RE map, and browse recovered Java and native code. It uses **pywebview** and keeps analysis local on your machine.
+
+<table>
+  <tr>
+    <td align="center"><strong>Analysis setup</strong></td>
+    <td align="center"><strong>Native extractor</strong></td>
+    <td align="center"><strong>Recovery workspace</strong></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/gui/setup.png" alt="Detranspiler analysis setup" width="420"></td>
+    <td><img src="docs/images/gui/extractor.png" alt="Detranspiler native extractor" width="420"></td>
+    <td><img src="docs/images/gui/workspace.png" alt="Detranspiler recovery workspace" width="420"></td>
+  </tr>
+</table>
+
+---
+
 ## Features
 
 <details open>
@@ -527,6 +546,21 @@ GitHub Actions workflow `.github/workflows/ci.yml` runs on push and pull request
 - `doctor` health check
 - Demo RE map generation
 - Optional Windows smoke test when repository variable `DETRANSPILER_SMOKE_SESSION` is set
+
+### Releases
+
+The release workflow builds a source distribution and wheel, validates both packages, and attaches them to a GitHub Release. Its release notes contain a **Changelog** generated from commit messages added after the previous release tag and up to the new tag.
+
+1. Update <code>project.version</code> in <code>pyproject.toml</code>.
+2. Commit the release changes.
+3. Create and push the matching tag, for example <code>v1.1.0</code>.
+
+<pre><code>git tag v1.1.0
+git push origin v1.1.0</code></pre>
+
+For example, the <code>v1.0.1</code> changelog contains commits after <code>v1.0.0</code> through <code>v1.0.1</code>. The changelog is written directly into the GitHub Release notes; it is not committed or uploaded as a separate file.
+
+The workflow rejects a tag when it does not exactly match the package version. Manual runs build downloadable workflow artifacts without publishing a GitHub Release.
 
 ---
 

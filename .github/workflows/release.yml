@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install release tooling
+        run: python -m pip install --upgrade build twine
+
+      - name: Verify tag matches package version
+        if: github.event_name == 'push'
+        shell: python
+        run: |
+          import os
+          import pathlib
+          import tomllib
+
+          version = tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+          tag = os.environ["GITHUB_REF_NAME"]
+          if tag != f"v{version}":
+              raise SystemExit(f"Tag {tag!r} does not match pyproject version v{version}")
+
+      - name: Build distributions
+        run: python -m build
+
+      - name: Validate distributions
+        run: python -m twine check dist/*
+
+      - name: Upload distribution artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-distributions
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Build changelog from commits
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          current_tag="${GITHUB_REF_NAME}"
+          previous_tag="$(git tag --merged "${current_tag}" --sort=-version:refname | grep -Fvx "${current_tag}" | head -n 1 || true)"
+          notes_path="${RUNNER_TEMP}/release-notes.md"
+
+          {
+            echo "## Changelog"
+            echo
+            if [[ -n "${previous_tag}" ]]; then
+              echo "Changes since ${previous_tag}:"
+              echo
+              git log --reverse --pretty=format:'- %s (%h)' "${previous_tag}..${current_tag}"
+            else
+              echo "Changes included in the first tagged release:"
+              echo
+              git log --reverse --pretty=format:'- %s (%h)' "${current_tag}"
+            fi
+            echo
+          } > "${notes_path}"
+
+          echo "RELEASE_NOTES_PATH=${notes_path}" >> "${GITHUB_ENV}"
+
+      - name: Create GitHub release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          body_path: ${{ env.RELEASE_NOTES_PATH }}
+          fail_on_unmatched_files: true
