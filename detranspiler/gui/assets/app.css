@@ -125,7 +125,7 @@ html, body {
   font-size: 11px;
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
 }
 
 .nav-btn {
@@ -433,7 +433,7 @@ html, body {
 .nativemap-pkg-title {
   font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   color: var(--muted);
   padding: 4px 8px;
   font-weight: 600;

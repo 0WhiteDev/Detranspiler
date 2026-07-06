@@ -5,12 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Detranspiler</title>
   <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="desktop.css">
 </head>
 <body>
+  <svg class="icon-sprite" aria-hidden="true">
+    <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.09A1.7 1.7 0 0 0 9 19.36a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.64 15 1.7 1.7 0 0 0 3.09 14H3v-4h.09A1.7 1.7 0 0 0 4.64 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.64 1.7 1.7 0 0 0 10 3.09V3h4v.09A1.7 1.7 0 0 0 15 4.64a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.36 9 1.7 1.7 0 0 0 20.91 10H21v4h-.09A1.7 1.7 0 0 0 19.4 15Z"/></symbol>
+    <symbol id="icon-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></symbol>
+    <symbol id="icon-map" viewBox="0 0 24 24"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15M15 6v15"/></symbol>
+    <symbol id="icon-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+    <symbol id="icon-folder-code" viewBox="0 0 24 24"><path d="M20 19a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-7l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3"/><path d="m10 17-2 2 2 2M14 21l2-2-2-2"/></symbol>
+    <symbol id="icon-package" viewBox="0 0 24 24"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9Z"/><path d="m4.2 7.4 7.8 4.5 7.8-4.5M12 12v9"/><path d="m8 5.2 8 4.6"/></symbol>
+    <symbol id="icon-activity" viewBox="0 0 24 24"><path d="M3 12h4l2-7 4 14 2-7h6"/></symbol>
+    <symbol id="icon-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7Z"/></symbol>
+    <symbol id="icon-folder-open" viewBox="0 0 24 24"><path d="M6 14 8 5h12l-2 9"/><path d="M3 4h5l2 3M3 4v16h15l3-10H6L3 20"/></symbol>
+    <symbol id="icon-external" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3"/><path d="M18 13v7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h7"/></symbol>
+  </svg>
   <div class="app-shell">
     <header class="app-topbar">
       <div class="app-brand">
-        <span class="dot"></span>
+        <img class="brand-mark" src="logo.svg" alt="">
         <span>Detranspiler</span>
         <span class="app-author">by <a href="https://github.com/0WhiteDev" target="_blank" rel="noopener noreferrer">0WhiteDev</a></span>
       </div>
@@ -20,15 +33,15 @@
     <div class="app-body">
       <aside class="app-sidebar">
         <h2>Workspace</h2>
-        <button class="nav-btn active" data-view="setup" id="navSetup">⚙️ Setup</button>
-        <button class="nav-btn" data-view="report" id="navReport" disabled>📄 Report <span class="tag" id="tagReport">-</span></button>
-        <button class="nav-btn" data-view="map" id="navMap" disabled>🗺️ RE Map <span class="tag" id="tagMap">-</span></button>
-        <button class="nav-btn" data-view="nativemap" id="navNativeMap" disabled>🔗 Native Map <span class="tag" id="tagNativeMap">-</span></button>
-        <button class="nav-btn" data-view="sources" id="navSources" disabled>📁 Sources <span class="tag" id="tagSources">-</span></button>
+        <button class="nav-btn active" data-view="setup" id="navSetup"><svg class="icon" aria-hidden="true"><use href="#icon-settings"></use></svg><span>Setup</span></button>
+        <button class="nav-btn" data-view="report" id="navReport" disabled><svg class="icon" aria-hidden="true"><use href="#icon-file"></use></svg><span>Report</span> <span class="tag" id="tagReport">-</span></button>
+        <button class="nav-btn" data-view="map" id="navMap" disabled><svg class="icon" aria-hidden="true"><use href="#icon-map"></use></svg><span>RE Map</span> <span class="tag" id="tagMap">-</span></button>
+        <button class="nav-btn" data-view="nativemap" id="navNativeMap" disabled><svg class="icon" aria-hidden="true"><use href="#icon-link"></use></svg><span>Native Map</span> <span class="tag" id="tagNativeMap">-</span></button>
+        <button class="nav-btn" data-view="sources" id="navSources" disabled><svg class="icon" aria-hidden="true"><use href="#icon-folder-code"></use></svg><span>Sources</span> <span class="tag" id="tagSources">-</span></button>
         <div class="divider"></div>
         <h2>Tools</h2>
-        <button class="nav-btn" data-view="extractor" id="navExtractor">🔓 Native Extractor</button>
-        <button class="nav-btn" data-view="doctor" id="navDoctor">🩺 Doctor</button>
+        <button class="nav-btn" data-view="extractor" id="navExtractor"><svg class="icon" aria-hidden="true"><use href="#icon-package"></use></svg><span>Native Extractor</span></button>
+        <button class="nav-btn" data-view="doctor" id="navDoctor"><svg class="icon" aria-hidden="true"><use href="#icon-activity"></use></svg><span>Doctor</span></button>
         <div class="sidebar-footer">
           <span id="appVersionMeta">Detranspiler</span>
           <span class="sidebar-footer-sep">·</span>
@@ -50,14 +63,14 @@
                 <label>Native library (DLL / SO / DYLIB)</label>
                 <div class="field-row">
                   <input type="text" id="inputDll" placeholder="C:\path\to\native.dll">
-                  <button class="btn" data-pick="dll">Browse</button>
+                  <button class="btn" data-pick="dll"><svg class="icon" aria-hidden="true"><use href="#icon-folder-open"></use></svg><span>Browse</span></button>
                 </div>
               </div>
               <div class="field">
                 <label>Output directory</label>
                 <div class="field-row">
                   <input type="text" id="outDir" placeholder="C:\path\to\output">
-                  <button class="btn" data-pick="folder">Browse</button>
+                  <button class="btn" data-pick="folder"><svg class="icon" aria-hidden="true"><use href="#icon-folder-open"></use></svg><span>Browse</span></button>
                 </div>
                 <div class="hint">Use a new folder, or an existing one with job.json to load without re-running.</div>
               </div>
@@ -87,21 +100,21 @@
                 <label>Ghidra install directory</label>
                 <div class="field-row">
                   <input type="text" id="ghidraDir" placeholder="C:\Tools\ghidra_12.0.1_PUBLIC">
-                  <button class="btn" data-pick="ghidra">Browse</button>
+                  <button class="btn" data-pick="ghidra"><svg class="icon" aria-hidden="true"><use href="#icon-folder-open"></use></svg><span>Browse</span></button>
                 </div>
               </div>
               <div class="field">
                 <label>External pseudo-C (optional, when Ghidra disabled)</label>
                 <div class="field-row">
                   <input type="text" id="pseudoC" placeholder="decompiled.c">
-                  <button class="btn" data-pick="pseudo_c">Browse</button>
+                  <button class="btn" data-pick="pseudo_c"><svg class="icon" aria-hidden="true"><use href="#icon-folder-open"></use></svg><span>Browse</span></button>
                 </div>
               </div>
               <div class="field">
                 <label>External functions.json (optional)</label>
                 <div class="field-row">
                   <input type="text" id="functionsJson" placeholder="functions.json">
-                  <button class="btn" data-pick="json">Browse</button>
+                  <button class="btn" data-pick="json"><svg class="icon" aria-hidden="true"><use href="#icon-folder-open"></use></svg><span>Browse</span></button>
                 </div>
               </div>
             </div>
@@ -120,16 +133,16 @@
                 <label>JAR path</label>
                 <div class="field-row">
                   <input type="text" id="jarPath" placeholder="C:\path\to\app.jar">
-                  <button class="btn" data-pick="jar">Browse</button>
+                  <button class="btn" data-pick="jar"><svg class="icon" aria-hidden="true"><use href="#icon-folder-open"></use></svg><span>Browse</span></button>
                 </div>
               </div>
             </div>
           </div>
 
           <div class="actions">
-            <button class="btn btn-primary" id="btnStart">▶ Start Detranspilation</button>
-            <button class="btn" id="btnLoad">📂 Load Existing Session</button>
-            <button class="btn" id="btnOpenOut" disabled>Open Output Folder</button>
+            <button class="btn btn-primary" id="btnStart"><svg class="icon" aria-hidden="true"><use href="#icon-play"></use></svg><span>Start Detranspilation</span></button>
+            <button class="btn" id="btnLoad"><svg class="icon" aria-hidden="true"><use href="#icon-folder-open"></use></svg><span>Load Existing Session</span></button>
+            <button class="btn" id="btnOpenOut" disabled><svg class="icon" aria-hidden="true"><use href="#icon-external"></use></svg><span>Open Output Folder</span></button>
           </div>
 
           <div class="progress-wrap" id="progressWrap" style="display:none">
@@ -153,14 +166,14 @@
                 <label>Input JAR</label>
                 <div class="field-row">
                   <input type="text" id="extractJar" placeholder="C:\path\to\protected.jar">
-                  <button class="btn" id="btnPickExtractJar">Browse</button>
+                  <button class="btn" id="btnPickExtractJar"><svg class="icon" aria-hidden="true"><use href="#icon-folder-open"></use></svg><span>Browse</span></button>
                 </div>
               </div>
               <div class="field" style="grid-column: 1 / -1">
                 <label>Output directory</label>
                 <div class="field-row">
                   <input type="text" id="extractOut" placeholder="C:\path\to\output">
-                  <button class="btn" id="btnPickExtractOut">Browse</button>
+                  <button class="btn" id="btnPickExtractOut"><svg class="icon" aria-hidden="true"><use href="#icon-folder-open"></use></svg><span>Browse</span></button>
                 </div>
               </div>
               <div class="field">
@@ -174,8 +187,8 @@
           </div>
 
           <div class="actions">
-            <button class="btn btn-primary" id="btnExtractNative">Extract Native Library</button>
-            <button class="btn" id="btnOpenExtractOut" disabled>Open Output Folder</button>
+            <button class="btn btn-primary" id="btnExtractNative"><svg class="icon" aria-hidden="true"><use href="#icon-package"></use></svg><span>Extract Native Library</span></button>
+            <button class="btn" id="btnOpenExtractOut" disabled><svg class="icon" aria-hidden="true"><use href="#icon-external"></use></svg><span>Open Output Folder</span></button>
           </div>
 
           <div class="extract-result hidden" id="extractResult"></div>
@@ -201,7 +214,7 @@
               <div class="nativemap-tree" id="nativeMapTree"></div>
               <p class="hint" id="nativeMapHint">Java native method → transpiled DLL function.</p>
               <div class="toolbar" style="margin-top:8px">
-                <button class="btn" id="btnOpenNativeMap" disabled>Open native_map folder</button>
+                <button class="btn" id="btnOpenNativeMap" disabled><svg class="icon" aria-hidden="true"><use href="#icon-external"></use></svg><span>Open native_map folder</span></button>
               </div>
             </aside>
             <div class="nativemap-editor panel">
@@ -235,7 +248,7 @@
           <h1 class="section-title">Environment Doctor</h1>
           <p class="section-sub">Check Python dependencies, Java, and Ghidra configuration.</p>
           <div class="actions">
-            <button class="btn btn-primary" id="btnDoctor">Run Diagnostics</button>
+            <button class="btn btn-primary" id="btnDoctor"><svg class="icon" aria-hidden="true"><use href="#icon-activity"></use></svg><span>Run Diagnostics</span></button>
           </div>
           <div class="panel" style="margin-top:16px">
             <div class="doctor-grid" id="doctorGrid">

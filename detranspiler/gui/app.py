@@ -1,4 +1,5 @@
 from __future__ import annotations
+import ctypes
 import os
 import sys
 from pathlib import Path
@@ -6,6 +7,15 @@ from typing import Optional
 
 def assets_dir() -> Path:
     return Path(__file__).resolve().parent / 'assets'
+
+def _window_icon() -> Path:
+    suffix = '.ico' if sys.platform == 'win32' else '.svg'
+    return assets_dir() / f'logo{suffix}'
+
+def _set_windows_app_id() -> None:
+    if sys.platform != 'win32':
+        return
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('0WhiteDev.Detranspiler')
 
 def _enable_local_file_access() -> None:
     if sys.platform == 'win32':
@@ -25,6 +35,7 @@ def launch_gui(*, width: Optional[int]=None, height: Optional[int]=None) -> int:
     from detranspiler.gui.api import DetranspilerApi
     from detranspiler.gui.settings import load_settings
     _enable_local_file_access()
+    _set_windows_app_id()
     settings = load_settings()
     api = DetranspilerApi()
     index_html = assets_dir() / 'index.html'
@@ -36,5 +47,6 @@ def launch_gui(*, width: Optional[int]=None, height: Optional[int]=None) -> int:
     def on_closed() -> None:
         api.shutdown()
     window.events.closed += on_closed
-    webview.start(debug=False)
+    icon = _window_icon()
+    webview.start(debug=False, icon=str(icon) if icon.is_file() else None)
     return 0
