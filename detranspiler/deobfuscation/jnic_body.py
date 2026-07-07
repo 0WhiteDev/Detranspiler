@@ -2,6 +2,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+from detranspiler.deobfuscation.jnic_patterns.method_handles import recover_method_handle_resolver
+from detranspiler.deobfuscation.jnic_patterns.string_concat import find_string_concat_lowerings, render_string_concat
 from detranspiler.java.jni_descriptors import _jni_method_sig_to_java
 _ARG_INDEX_RE = re.compile('\\(\\*\\*\\(code\\s*\\*\\*\\)\\(\\*\\s*\\w+\\s*\\+\\s*0x568\\)\\)\\s*\\(\\s*\\w+\\s*,\\s*(?P<args>\\w+)\\s*,\\s*(?P<idx>\\d+)\\s*\\)')
 _RETURN_RE = re.compile(r'return\s+(?P<expr>[\w.\[\]+\-*/^&|<>!=, ]+);')
@@ -167,6 +169,10 @@ def _pattern_void_dispatch(*, calls: Sequence[_JniCall], block: str, ret_java: s
 _RAW_VAR_RE = re.compile('^(?:u?Var\\d+|[a-z]Var\\d+|p[a-z]?Var\\d+|[abciulp]?Stack_[0-9A-Fa-f]+|local_[0-9A-Fa-f]+|auStack_[0-9A-Fa-f]+|a[a-z]Stack_[0-9A-Fa-f]+|_?_?DAT_[0-9A-Fa-f]+|_?UNK_[0-9A-Fa-f]+|param_\\d+|in_[A-Za-z0-9_]+|unaff_[A-Za-z0-9_]+|extraout_[A-Za-z0-9_]+|register0x[0-9A-Fa-f]+)$')
 _EXPR_TOKEN_RE = re.compile(r'[A-Za-z_]\w*(?:\[[A-Za-z0-9_]+])?')
 _JNI_PRIM_RETURN = {'Boolean': 'boolean', 'Byte': 'byte', 'Char': 'char', 'Short': 'short', 'Int': 'int', 'Long': 'long', 'Float': 'float', 'Double': 'double', 'Void': 'void', 'Object': 'Object'}
+_KNOWN_JAVA_METHODS = {
+    ('java/lang/System', 'getenv', 1): '(Ljava/lang/String;)Ljava/lang/String;',
+    ('java/nio/file/Paths', 'get', 2): '(Ljava/lang/String;[Ljava/lang/String;)Ljava/nio/file/Path;',
+}
 
 def _descriptor_type(descriptor: Optional[str]) -> Optional[str]:
     if not isinstance(descriptor, str) or not descriptor:
@@ -275,13 +281,19 @@ class _TraceContext:
         cleaned = re.sub('\\(([A-Za-z_]\\w*\\s*\\*\\s*\\*?\\s*)\\)', '', cleaned)
         cleaned = re.sub('\\((?:un)?(?:signed\\s+)?(?:u?int\\d*|u?long(?:long)?|u?short|u?char|byte|undefined\\d*|code|void|float|double|size_t|wchar_t)\\)', '', cleaned)
         cleaned = re.sub('&(?=[A-Za-z_(])', '', cleaned)
+        cleaned = re.sub(r'\b0x[0-9A-Fa-f]{9,}(?![0-9A-Fa-fuUlL])', lambda match: match.group(0) + 'L', cleaned)
         return cleaned.strip()
 
 def _coerce_numeric_argument(expr: str, target_type: str) -> str:
-    match = re.fullmatch(r'([+-]?\d+)(?:L)?', expr.strip())
+    concat = re.fullmatch(r'CONCAT(?P<high>\d+)(?P<low>\d+)\([^,]+,\s*(?P<value>[^)]+)\)', expr.strip())
+    widths = {'byte': 1, 'char': 2, 'short': 2, 'int': 4, 'long': 8}
+    if concat is not None and widths.get(target_type, 0) <= int(concat.group('low')):
+        expr = concat.group('value').strip()
+    match = _INT_LITERAL_RE.fullmatch(expr.strip())
     if match is None:
-        return expr
-    value = int(match.group(1))
+        return f'({target_type}) ({expr})' if target_type in {'byte', 'char', 'short', 'int'} else expr
+    literal = expr.strip().rstrip('uUlL')
+    value = int(literal, 16 if literal.lower().startswith('0x') else 10)
     if target_type in {'int', 'short', 'byte', 'char'}:
         if 0x80000000 <= value <= 0xffffffff:
             value -= 0x100000000
@@ -309,6 +321,26 @@ def _call_resolved_id(call: _JniCall, index: int) -> Optional[Dict[str, Any]]:
     return info if isinstance(info, dict) else None
 
 
+def _complete_method_info(info: Optional[Dict[str, Any]], native_index: Optional[Dict[str, Any]], argument_count: int) -> Optional[Dict[str, Any]]:
+    if not isinstance(info, dict) or info.get('signature'):
+        return info
+    owner, name = info.get('class'), info.get('name')
+    known = _KNOWN_JAVA_METHODS.get((owner, name, argument_count))
+    if known:
+        return {**info, 'signature': known}
+    if not isinstance(native_index, dict):
+        return info
+    matches: List[Dict[str, Any]] = []
+    for item in native_index.get('methods', []):
+        if not isinstance(item, dict) or item.get('class') != owner or item.get('method') != name:
+            continue
+        descriptor = item.get('descriptor')
+        parsed = _jni_method_sig_to_java(descriptor) if isinstance(descriptor, str) else None
+        if parsed is not None and len(parsed[1]) == argument_count:
+            matches.append(item)
+    if len(matches) != 1:
+        return info
+    return {**info, 'signature': matches[0]['descriptor']}
 
 
 def _pattern_primitive_cache_decrypt(*, calls: Sequence[_JniCall], block: str, param_types: Sequence[str], param_names: Sequence[str], ret_java: str) -> Optional[List[str]]:
@@ -382,6 +414,7 @@ def _pattern_invokedynamic_dispatch(*, calls: Sequence[_JniCall], param_types: S
         f'{call_site}.setTarget(java.lang.invoke.MethodHandles.explicitCastArguments(target, {method_type}));',
         f'return target.asSpreader(Object[].class, {args}.length).invoke({args});',
     ]
+
 
 def _pattern_radioegor_invokedynamic_bootstrap(*, calls: Sequence[_JniCall], param_types: Sequence[str], param_names: Sequence[str], ret_java: str, class_internal: Optional[str], native_index: Optional[Dict[str, Any]]) -> Optional[List[str]]:
     simple_types = [item.replace('$', '.').rsplit('.', 1)[-1] for item in param_types]
@@ -529,6 +562,29 @@ def _pattern_radioegor_reflection_recursive_search(*, fn_symbol: str, jni_calls:
         'return null;',
     ]
 
+def _jnic_reflection_cache_fields(*, jni_calls: Optional[Dict[str, Any]], class_internal: Optional[str], native_index: Optional[Dict[str, Any]]) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
+    if not class_internal:
+        return None
+    all_calls = [item for item in (jni_calls or {}).get('calls', []) if isinstance(item, dict)]
+    initializers = [
+        item for item in (native_index or {}).get('methods', [])
+        if isinstance(item, dict) and item.get('class') == class_internal and item.get('descriptor') == '()V'
+        and isinstance(item.get('fn_symbol'), str) and not str(item.get('method') or '').startswith('$')
+    ]
+    pairs: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
+    for initializer in initializers:
+        fields = [
+            info for call in all_calls if call.get('function') == initializer['fn_symbol']
+            for info in (call.get('resolved_ids') or {}).values()
+            if isinstance(info, dict) and info.get('kind') == 'field' and info.get('class') == class_internal and info.get('static')
+        ]
+        caches = {str(info.get('name')): info for info in fields if info.get('signature') == '[Ljava/lang/Object;' and info.get('name')}
+        names = {str(info.get('name')): info for info in fields if info.get('signature') == '[Ljava/lang/String;' and info.get('name')}
+        if len(caches) == 1 and len(names) == 1:
+            pairs.append((next(iter(caches.values())), next(iter(names.values()))))
+    return pairs[0] if len(pairs) == 1 else None
+
+
 def _pattern_radioegor_class_cache(*, fn_symbol: str, calls: Sequence[_JniCall], jni_calls: Optional[Dict[str, Any]], param_types: Sequence[str], param_names: Sequence[str], ret_java: str, class_internal: Optional[str], native_index: Optional[Dict[str, Any]]) -> Optional[List[str]]:
     if list(param_types) != ['long', 'long'] or len(param_names) != 2 or not ret_java.endswith('Class') or not class_internal:
         return None
@@ -536,10 +592,8 @@ def _pattern_radioegor_class_cache(*, fn_symbol: str, calls: Sequence[_JniCall],
     index_methods = [item for item in methods if item.get('descriptor') == '(JJ)I' and isinstance(item.get('method'), str)]
     if len(index_methods) != 1:
         return None
-    cache = next((info for call in calls for info in call.resolved_ids.values() if isinstance(info, dict) and info.get('signature') == '[Ljava/lang/Object;' and info.get('static')), None)
-    all_calls = [item for item in (jni_calls or {}).get('calls', []) if isinstance(item, dict)]
-    index_calls = [item for item in all_calls if item.get('function') == index_methods[0].get('fn_symbol')]
-    names = next((info for call in index_calls for info in (call.get('resolved_ids') or {}).values() if isinstance(info, dict) and info.get('signature') == '[Ljava/lang/String;' and info.get('static')), None)
+    pair = _jnic_reflection_cache_fields(jni_calls=jni_calls, class_internal=class_internal, native_index=native_index)
+    cache, names = pair if pair is not None else (None, None)
     if not isinstance(cache, dict) or not isinstance(names, dict):
         return None
     if not any(call.jni_name == 'IsInstanceOf' for call in calls) or not any(call.jni_name == 'ExceptionOccurred' for call in calls):
@@ -589,9 +643,8 @@ def _pattern_radioegor_member_cache(*, fn_symbol: str, calls: Sequence[_JniCall]
     if len(direct) != 1:
         return None
     recursive = [item for item in helpers if item is not direct[0]]
-    cache = next((info for call in calls for info in call.resolved_ids.values() if isinstance(info, dict) and info.get('signature') == '[Ljava/lang/Object;' and info.get('static')), None)
-    index_calls = [item for item in all_calls if item.get('function') == index[0].get('fn_symbol')]
-    names = next((info for call in index_calls for info in (call.get('resolved_ids') or {}).values() if isinstance(info, dict) and info.get('signature') == '[Ljava/lang/String;' and info.get('static')), None)
+    pair = _jnic_reflection_cache_fields(jni_calls=jni_calls, class_internal=class_internal, native_index=native_index)
+    cache, names = pair if pair is not None else (None, None)
     if not isinstance(cache, dict) or not isinstance(names, dict) or len(recursive) != 1:
         return None
     if not any(call.jni_name == 'IsInstanceOf' for call in calls):
@@ -707,7 +760,7 @@ def _infinite_loop_key(block: str, source_line: str) -> Optional[Tuple[int, int]
     return None
 
 
-def _reconstruct_body(*, calls: Sequence[_JniCall], decoded: Dict[str, str], arg_index_map: Dict[str, str], alias_map: Dict[str, str], args_param: Optional[str], ret_java: str, block: str) -> Optional[List[str]]:
+def _reconstruct_body(*, calls: Sequence[_JniCall], decoded: Dict[str, str], arg_index_map: Dict[str, str], alias_map: Dict[str, str], args_param: Optional[str], ret_java: str, block: str, native_index: Optional[Dict[str, Any]]=None) -> Optional[List[str]]:
     if not calls:
         return None
     ctx = _TraceContext(alias_map=alias_map, arg_index_map=arg_index_map, decoded=decoded)
@@ -724,6 +777,7 @@ def _reconstruct_body(*, calls: Sequence[_JniCall], decoded: Dict[str, str], arg
         stmt_loops.append(_infinite_loop_key(block, call.source_line))
     writeback: Optional[str] = None
     max_stmts = 40
+    concat_lowerings, skipped_calls = find_string_concat_lowerings(calls)
 
     def remember(result_var: Optional[str], expr: str) -> None:
         nonlocal last_value
@@ -766,9 +820,17 @@ def _reconstruct_body(*, calls: Sequence[_JniCall], decoded: Dict[str, str], arg
             return None
         value = call.resolved_classes.get(call.args[index])
         return value if isinstance(value, str) else None
-    for call in calls:
+    for call_index, call in enumerate(calls):
         if len(stmts) >= max_stmts:
             break
+        if call_index in concat_lowerings:
+            raw = concat_lowerings[call_index]
+            expression = render_string_concat(raw[-1], [ctx.resolve(argument) for argument in raw[:-1]])
+            if expression is not None:
+                remember(call.result_var, expression)
+            continue
+        if call_index in skipped_calls:
+            continue
         name = call.jni_name
         if not isinstance(name, str) or not name:
             continue
@@ -815,6 +877,7 @@ def _reconstruct_body(*, calls: Sequence[_JniCall], decoded: Dict[str, str], arg
             method_index = 3 if nonvirtual else 2
             argument_index = method_index + 1
             info = (method_ids.get(call.args[method_index]) or resolved_id(call, method_index)) if len(call.args) > method_index else None
+            info = _complete_method_info(info, native_index, max(0, len(call.args) - argument_index))
             is_static = bool(info and info.get('static'))
             mname = (info or {}).get('name') or ctx.enc_label('method')
             recv_type = _class_type((info or {}).get('class'))
@@ -856,8 +919,9 @@ def _reconstruct_body(*, calls: Sequence[_JniCall], decoded: Dict[str, str], arg
             continue
         if name == 'NewObjectArray':
             length = ctx.resolve(call.args[1]) if len(call.args) > 1 else '0'
+            element = _class_type(resolved_class(call, 2)) or 'Object'
             var = ctx.fresh_temp()
-            emit(call, f'Object[] {var} = new Object[{length}];')
+            emit(call, f'{element}[] {var} = new {element}[{length}];')
             remember(call.result_var, var)
             continue
         if name.startswith('Get') and name.endswith('Field'):
@@ -906,7 +970,7 @@ def _reconstruct_body(*, calls: Sequence[_JniCall], decoded: Dict[str, str], arg
             continue
         if name in {'NewStringUTF', 'NewString'}:
             label = resolved_string(call, 1)
-            if isinstance(label, str) and label:
+            if isinstance(label, str):
                 expr = _java_string_literal(label)
             else:
                 expr = f'''"<enc:{ctx.enc_label('str')}>"'''
@@ -985,7 +1049,8 @@ def _cast_for_return(ret_java: str, expr: str) -> str:
     return f'({ret_java}) {expr}'
 
 def _java_string_literal(value: str) -> str:
-    escaped = str(value).replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+    replacements = {'\\': '\\\\', '"': '\\"', '\n': '\\n', '\r': '\\r', '\t': '\\t', '\b': '\\b', '\f': '\\f'}
+    escaped = ''.join(replacements.get(char, f'\\u{ord(char):04x}' if ord(char) < 0x20 else char) for char in str(value))
     return f'"{escaped}"'
 
 def _default_return_expr(ret_java: str) -> str:
@@ -1011,6 +1076,7 @@ def recover_jnic_body(*, fn_symbol: str, block: Optional[str], jni_calls: Option
     producers = [
         lambda: _pattern_primitive_cache_decrypt(calls=calls, block=block, param_types=param_types, param_names=param_names, ret_java=ret_java),
         lambda: _pattern_invokedynamic_dispatch(calls=calls, param_types=param_types, param_names=param_names, ret_java=ret_java),
+        lambda: recover_method_handle_resolver(fn_symbol=fn_symbol, calls=calls, jni_calls=jni_calls, param_types=param_types, param_names=param_names, ret_java=ret_java, class_internal=cfg.class_internal, native_index=cfg.native_index),
         lambda: _pattern_radioegor_invokedynamic_bootstrap(calls=calls, param_types=param_types, param_names=param_names, ret_java=ret_java, class_internal=cfg.class_internal, native_index=cfg.native_index),
         lambda: _pattern_radioegor_reflection_member_search(calls=calls, param_types=param_types, param_names=param_names, ret_java=ret_java, class_internal=cfg.class_internal, native_index=cfg.native_index),
         lambda: _pattern_radioegor_reflection_recursive_search(fn_symbol=fn_symbol, jni_calls=jni_calls, param_types=param_types, param_names=param_names, ret_java=ret_java, class_internal=cfg.class_internal, native_index=cfg.native_index),
@@ -1021,7 +1087,7 @@ def recover_jnic_body(*, fn_symbol: str, block: Optional[str], jni_calls: Option
     ]
     if not instruction_trace:
         producers.extend([
-            lambda: _reconstruct_body(calls=calls, decoded=decoded, arg_index_map=arg_index_map, alias_map=alias_map, args_param=args_param, ret_java=ret_java, block=block),
+            lambda: _reconstruct_body(calls=calls, decoded=decoded, arg_index_map=arg_index_map, alias_map=alias_map, args_param=args_param, ret_java=ret_java, block=block, native_index=cfg.native_index),
             lambda: _pattern_void_dispatch(calls=calls, block=block, ret_java=ret_java),
         ])
     for producer in producers:

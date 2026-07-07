@@ -207,7 +207,6 @@ def _jnic_buffer_words_from_jar(jar_path: Optional[Path]) -> Optional[Tuple[int,
                 if member == ('java/nio/ByteBuffer', 'putInt', '(I)Ljava/nio/ByteBuffer;') and last_integer is not None:
                     puts.append(last_integer)
                 last_integer = None
-        # JNIC appends four platform-independent words after all platform branches.
         if len(puts) >= 4:
             matches.append((puts[-4], puts[-3], puts[-2]))
     unique = list(dict.fromkeys(matches))

@@ -23,6 +23,34 @@ _BASE_OFFSET_RE = re.compile(r'^(?:qword|dword|word|byte) ptr \[(R\w+) \+ (0x[0-
 _DIRECT_OFFSET_CALL_RE = re.compile(r'^qword ptr \[(R\w+) \+ (0x[0-9a-fA-F]+)]$')
 _IMMEDIATE_RE = re.compile(r'^-?0x[0-9a-fA-F]+$|^-?\d+$')
 
+_FIXED_JNI_ARITY = {
+    'GetVersion': 1, 'ExceptionOccurred': 1, 'ExceptionDescribe': 1, 'ExceptionClear': 1, 'ExceptionCheck': 1,
+    'FindClass': 2, 'Throw': 2, 'DeleteGlobalRef': 2, 'DeleteLocalRef': 2, 'NewGlobalRef': 2,
+    'NewLocalRef': 2, 'DeleteWeakGlobalRef': 2, 'NewWeakGlobalRef': 2, 'GetObjectClass': 2,
+    'GetSuperclass': 2, 'AllocObject': 2, 'GetArrayLength': 2, 'GetStringLength': 2,
+    'GetStringUTFLength': 2, 'NewStringUTF': 2, 'MonitorEnter': 2, 'MonitorExit': 2,
+    'IsSameObject': 3, 'IsInstanceOf': 3, 'ThrowNew': 3, 'NewString': 3,
+    'IsAssignableFrom': 3, 'GetObjectArrayElement': 3,
+    'GetMethodID': 4, 'GetStaticMethodID': 4, 'GetFieldID': 4, 'GetStaticFieldID': 4,
+    'NewObjectArray': 4, 'SetObjectArrayElement': 4, 'RegisterNatives': 4,
+}
+for _array_kind in ('Boolean', 'Byte', 'Char', 'Short', 'Int', 'Long', 'Float', 'Double'):
+    _FIXED_JNI_ARITY[f'New{_array_kind}Array'] = 2
+    _FIXED_JNI_ARITY[f'Get{_array_kind}ArrayRegion'] = 5
+    _FIXED_JNI_ARITY[f'Set{_array_kind}ArrayRegion'] = 5
+for _field_kind in ('Object', 'Boolean', 'Byte', 'Char', 'Short', 'Int', 'Long', 'Float', 'Double'):
+    _FIXED_JNI_ARITY[f'Get{_field_kind}Field'] = 3
+    _FIXED_JNI_ARITY[f'Set{_field_kind}Field'] = 4
+    _FIXED_JNI_ARITY[f'GetStatic{_field_kind}Field'] = 3
+    _FIXED_JNI_ARITY[f'SetStatic{_field_kind}Field'] = 4
+for _call_kind in ('Object', 'Boolean', 'Byte', 'Char', 'Short', 'Int', 'Long', 'Float', 'Double', 'Void'):
+    for _suffix in ('V', 'A'):
+        _FIXED_JNI_ARITY[f'Call{_call_kind}Method{_suffix}'] = 4
+        _FIXED_JNI_ARITY[f'CallStatic{_call_kind}Method{_suffix}'] = 4
+        _FIXED_JNI_ARITY[f'CallNonvirtual{_call_kind}Method{_suffix}'] = 5
+for _suffix in ('V', 'A'):
+    _FIXED_JNI_ARITY[f'NewObject{_suffix}'] = 4
+
 
 def _reg(raw: str) -> Optional[str]:
     value = str(raw or '').strip().upper()
@@ -98,6 +126,7 @@ def augment_jni_calls_from_instructions(
     added = 0
     functions_augmented = 0
     seen_instruction_calls: set[tuple[str, str, str]] = set()
+    comparisons: Dict[str, List[Dict[str, Any]]] = {}
     for function in functions:
         if not isinstance(function, dict):
             continue
@@ -126,6 +155,15 @@ def augment_jni_calls_from_instructions(
             text = str(instruction.get('text') or '')
             address = str(instruction.get('address') or '')
             operands = _split_operands(text)
+            if mnemonic == 'CMP' and len(operands) == 2:
+                register = _reg(operands[0])
+                if register and _IMMEDIATE_RE.match(operands[1]):
+                    try:
+                        value = int(operands[1], 16 if '0x' in operands[1].lower() else 10)
+                    except ValueError:
+                        value = None
+                    if isinstance(value, int):
+                        comparisons.setdefault(canonical_name, []).append({'register': register, 'value': value, 'address': address.lower()})
             if mnemonic in {'MOV', 'MOVZX', 'MOVSX', 'MOVSXD'} and len(operands) == 2:
                 destination, source = operands
                 destination_reg = _reg(destination)
@@ -197,6 +235,9 @@ def augment_jni_calls_from_instructions(
             args = [values.get(register, f'asm_{register.lower()}') for register in ('RCX', 'RDX', 'R8', 'R9')]
             for stack_offset in sorted(key for key in call_stack_args if key >= 0x20):
                 args.append(call_stack_args[stack_offset])
+            fixed_arity = _FIXED_JNI_ARITY.get(jni_name)
+            if isinstance(fixed_arity, int):
+                args = args[:fixed_arity]
             result_var = f'asm_result_{address.lower()}'
             calls.append({
                 'function': canonical_name,
@@ -245,6 +286,8 @@ def augment_jni_calls_from_instructions(
     updated['counts_by_category'] = counts_by_category
     updated['jnic_instruction_calls_added'] = added
     updated['jnic_instruction_functions_augmented'] = functions_augmented
+    if comparisons:
+        updated['jnic_instruction_comparisons'] = comparisons
     return updated
 
 

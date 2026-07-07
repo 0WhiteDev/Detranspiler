@@ -22,6 +22,13 @@ _RELATIVE_DISPATCH_RE = re.compile(
     r'\s*\+\s*(?P<shift>0x[0-9A-Fa-f]+|\d+)\)\s*\*\s*4\)\s*\+\s*(?P=base)',
     re.DOTALL,
 )
+_PREFIX_RELATIVE_DISPATCH_RE = re.compile(
+    r'(?P<base>[A-Za-z_]\w*)\s*\+\s*\*\(int\s*\*\)\(\s*(?P=base)\s*\+'
+    r'\s*\(ulonglong\)\s*\(\(\*\(uint\s*\*\)\((?:DAT_[0-9A-Fa-f]+|[A-Za-z_]\w*)\s*\+'
+    r'\s*(?P<offset>0x[0-9A-Fa-f]+|\d+)\)\s*\^\s*(?P<key>0x[0-9A-Fa-f]+)\)'
+    r'\s*\+\s*(?P<shift>0x[0-9A-Fa-f]+|\d+)\)\s*\*\s*4\)',
+    re.DOTALL,
+)
 _MARKER_RE = re.compile(r'^\s*/\* FUNCTION (?P<name>\S+)\s+[0-9A-Fa-f]+\s+\*/', re.MULTILINE)
 
 
@@ -54,6 +61,7 @@ def resolve_jnic_dispatch_targets(*, pseudo_c: str, binary_path: Path, keystream
         if len(tables) == 1:
             table = next(iter(tables))
             candidates.extend((match, table, 'relative') for match in _RELATIVE_DISPATCH_RE.finditer(block))
+            candidates.extend((match, table, 'relative-prefix') for match in _PREFIX_RELATIVE_DISPATCH_RE.finditer(block))
         for match, table, dispatch_kind in candidates:
             offset = int(match.group('offset'), 0)
             if offset < 0 or offset + 4 > len(keystream):

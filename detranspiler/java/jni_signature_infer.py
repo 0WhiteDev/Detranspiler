@@ -78,7 +78,6 @@ def refine_jni_export_java_signature(
     dat_ptr_values: Optional[dict] = None,
     read_string_at_va: Optional[Callable[[int], Optional[str]]] = None,
 ) -> Tuple[str, List[str], List[str]]:
-    """Refine Ghidra JNI signature (env + jclass + args) into Java return + arg types/names."""
     java_params = list(ghidra_params[2:]) if len(ghidra_params) > 2 else []
     param_types = [t for t, _n in java_params]
     param_names = [_sanitize_java_identifier(n) for _t, n in java_params]

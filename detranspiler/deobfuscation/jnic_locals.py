@@ -168,6 +168,7 @@ def _decode_stack_string(
     keystream: Optional[bytes]=None,
     require_terminator: bool=True,
     byte_offset: int=0,
+    expected_units: Optional[int]=None,
 ) -> Optional[str]:
     base = _stack_offset(base_name)
     if base is not None:
@@ -198,7 +199,8 @@ def _decode_stack_string(
                     memory[relative] ^= keystream[key_offset + relative]
     data = bytearray()
     terminated = False
-    for index in range(512):
+    expected_bytes = expected_units * (2 if wide else 1) if isinstance(expected_units, int) and expected_units >= 0 else None
+    for index in range(expected_bytes if expected_bytes is not None else 512):
         byte = memory.get(index)
         if byte is None:
             break
@@ -206,18 +208,22 @@ def _decode_stack_string(
             terminated = True
             break
         data.append(byte)
-        if wide and len(data) >= 2 and len(data) % 2 == 0 and data[-2:] == b'\x00\x00':
+        if wide and expected_bytes is None and len(data) >= 2 and len(data) % 2 == 0 and data[-2:] == b'\x00\x00':
             data = data[:-2]
             terminated = True
             break
-    if not data or (require_terminator and not terminated):
+    if expected_bytes == 0:
+        return ''
+    if expected_bytes is not None and len(data) != expected_bytes:
+        return None
+    if not data or (require_terminator and expected_bytes is None and not terminated):
         return None
     if wide:
         try:
             text = bytes(data[:len(data) - len(data) % 2]).decode('utf-16le')
         except UnicodeDecodeError:
             return None
-        return text if text and all(ch.isprintable() or ch in '\r\n\t' for ch in text) else None
+        return text if text and (expected_bytes is not None or all(ch.isprintable() or ch in '\r\n\t' for ch in text)) else None
     for encoding in ('utf-8', 'ascii'):
         try:
             text = bytes(data).decode(encoding)
@@ -423,6 +429,11 @@ def enrich_jni_calls_with_local_strings(
                         keystream=keystream,
                         require_terminator=call.get('jni_name') not in {'NewString', 'NewStringUTF'},
                         byte_offset=byte_offset,
+                        expected_units=(
+                            _eval_expr(str((call.get('args') or [None, None, None])[2]), values, read_u64_at_va, keystream)
+                            if call.get('jni_name') == 'NewString' and len(call.get('args') or []) > 2
+                            else None
+                        ),
                     )
                     if decoded is not None:
                         resolved[arg_text] = decoded
@@ -435,15 +446,26 @@ def enrich_jni_calls_with_local_strings(
     global_classes: Dict[str, str] = {}
     id_results: Dict[str, Dict[str, Any]] = {}
 
+    def global_variants(symbol: str) -> Tuple[str, ...]:
+        if re.fullmatch(r'_?(?:DAT|UNK)_[0-9A-Fa-f]+', symbol):
+            normalized = symbol.lstrip('_')
+            return normalized, '_' + normalized
+        return (symbol,)
+
     def remember_class(call: Dict[str, Any], symbol: str, class_name: str) -> None:
         function = str(call.get('function') or '')
         scoped_classes[(function, symbol)] = class_name
         if re.match(r'^_?(?:DAT|UNK)_[0-9A-Fa-f]+$', symbol):
-            global_classes[symbol] = class_name
+            for variant in global_variants(symbol):
+                global_classes[variant] = class_name
 
     def resolve_class(call: Dict[str, Any], symbol: str) -> Optional[str]:
         function = str(call.get('function') or '')
-        return scoped_classes.get((function, symbol)) or global_classes.get(symbol)
+        return scoped_classes.get((function, symbol)) or next((global_classes[item] for item in global_variants(symbol) if item in global_classes), None)
+
+    def remember_id(symbol: str, info: Dict[str, Any]) -> None:
+        for variant in global_variants(symbol):
+            id_results[variant] = info
 
     for call in calls:
         name = call.get('jni_name')
@@ -463,31 +485,33 @@ def enrich_jni_calls_with_local_strings(
             method_name = resolved.get(args[2]) or existing.get('method')
             signature = resolved.get(args[3]) or existing.get('signature')
             if isinstance(method_name, str):
-                id_results[result] = {
+                remember_id(result, {
                     'kind': 'method',
                     'name': method_name,
                     'signature': signature,
                     'class': resolve_class(call, args[1]),
                     'static': name == 'GetStaticMethodID',
-                }
+                })
         elif name in {'GetFieldID', 'GetStaticFieldID'} and isinstance(result, str) and len(args) > 3:
             field_name = resolved.get(args[2]) or existing.get('field')
             signature = resolved.get(args[3]) or existing.get('signature')
             if isinstance(field_name, str):
-                id_results[result] = {
+                remember_id(result, {
                     'kind': 'field',
                     'name': field_name,
                     'signature': signature,
                     'class': resolve_class(call, args[1]),
                     'static': name == 'GetStaticFieldID',
-                }
+                })
     for call in calls:
         symbol_aliases = call.get('_resolved_symbols') if isinstance(call.get('_resolved_symbols'), dict) else {}
-        linked = {
-            str(arg): id_results[symbol_aliases.get(str(arg), str(arg))]
-            for arg in call.get('args') or []
-            if symbol_aliases.get(str(arg), str(arg)) in id_results
-        }
+        linked: Dict[str, Dict[str, Any]] = {}
+        for arg in call.get('args') or []:
+            raw = str(arg)
+            symbol = symbol_aliases.get(raw, raw)
+            info = next((id_results[item] for item in global_variants(symbol) if item in id_results), None)
+            if isinstance(info, dict):
+                linked[raw] = info
         if linked:
             call['resolved_ids'] = linked
         class_consumers = {'NewGlobalRef', 'NewLocalRef', 'NewWeakGlobalRef', 'GetMethodID', 'GetStaticMethodID', 'GetFieldID', 'GetStaticFieldID', 'IsInstanceOf', 'NewObject', 'NewObjectA', 'NewObjectV', 'AllocObject', 'NewObjectArray'}
@@ -507,7 +531,7 @@ def enrich_jni_calls_with_local_strings(
     updated = dict(jni_calls)
     updated['calls'] = calls
     updated['jnic_local_strings_resolved'] = resolved_total
-    updated['jnic_ids_resolved'] = len(id_results)
+    updated['jnic_ids_resolved'] = len({symbol.lstrip('_') for symbol in id_results})
     updated['jnic_classes_resolved'] = len(scoped_classes)
     return updated
 

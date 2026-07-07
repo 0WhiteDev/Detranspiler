@@ -210,7 +210,12 @@ def run_pipeline(*, input_path: Path, out_dir: Path, requested_mode: str='AUTO',
             recovered_count = 0
             last_targets_c_path: Optional[Path] = None
             max_dispatch_iterations = 10
-            max_dispatch_targets = 512
+            registered_method_count = sum(
+                len(call.get('methods') or [])
+                for call in (jni_register_res or {}).get('register_calls', [])
+                if isinstance(call, dict)
+            )
+            max_dispatch_targets = min(1536, max(512, registered_method_count * 16))
             for iteration in range(max_dispatch_iterations):
                 discovered = resolve_jnic_dispatch_targets(pseudo_c=pseudo_c_text or '', binary_path=copied_input, keystream=jnic_keystream_bytes, jni_register=jni_register_res)
                 targets = [item for item in discovered if (str(item.get('function')), str(item.get('target'))) not in seen_targets]
@@ -245,7 +250,16 @@ def run_pipeline(*, input_path: Path, out_dir: Path, requested_mode: str='AUTO',
             if all_targets and functions_json_path is not None:
                 functions_refresh = run_headless_export_functions(ghidra_install_dir=ghidra_install_dir, project_dir=project_dir, project_name=project_name, program_name=copied_input.name, output_functions_json_path=functions_json_path, logs_dir=logs_dir)
             dispatch_status = 'OK' if dispatch_runs and all(run.get('status') == 'OK' for run in dispatch_runs) else 'ERROR' if dispatch_runs else 'SKIPPED'
-            jnic_dispatch_res = {'status': dispatch_status, 'targets_total': len(all_targets), 'targets_decompiled': recovered_count, 'iterations': len(dispatch_runs), 'runs': dispatch_runs, 'functions_refresh': functions_refresh}
+            jnic_dispatch_res = {
+                'status': dispatch_status,
+                'targets_total': len(all_targets),
+                'targets_decompiled': recovered_count,
+                'target_limit': max_dispatch_targets,
+                'limit_reached': len(seen_targets) >= max_dispatch_targets,
+                'iterations': len(dispatch_runs),
+                'runs': dispatch_runs,
+                'functions_refresh': functions_refresh,
+            }
             job['artifacts']['jnic_dispatch_targets'] = str(targets_path.resolve())
             if last_targets_c_path is not None:
                 job['artifacts']['jnic_dispatch_pseudo_c'] = str(last_targets_c_path.resolve())

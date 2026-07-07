@@ -205,7 +205,6 @@ def enrich_jnic_register_from_jar(
     *,
     jar_meta: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    """JNIC: bind encrypted RegisterNatives entries to ordered native methods from class metadata."""
     if not isinstance(jni_register, dict) or not isinstance(jar_meta, dict):
         return jni_register or {'status': 'SKIPPED'}
     from detranspiler.java.jni_export_parse import _parse_jni_export_name
