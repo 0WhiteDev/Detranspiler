@@ -132,9 +132,8 @@ def run_pipeline(*, input_path: Path, out_dir: Path, requested_mode: str='AUTO',
         from detranspiler.binary.patterns import scan_patterns
         if pseudo_c_path is not None and pseudo_c_path.is_file():
             pseudo_c_text = pseudo_c_path.read_text(encoding='utf-8', errors='replace')
-            if len(pseudo_c_text) > 1000000:
-                pseudo_c_text = pseudo_c_text[:1000000]
-        patterns_res = scan_patterns(exports=exports, imports=imports, strings=strings, pseudo_c=pseudo_c_text)
+        scan_text = pseudo_c_text[:1000000] if isinstance(pseudo_c_text, str) else None
+        patterns_res = scan_patterns(exports=exports, imports=imports, strings=strings, pseudo_c=scan_text)
     except Exception as e:
         patterns_res = {'status': 'EXCEPTION', 'error': repr(e)}
     jnic_patterns_res: Dict[str, Any]
@@ -236,10 +235,10 @@ def run_pipeline(*, input_path: Path, out_dir: Path, requested_mode: str='AUTO',
                 recovered_count += iteration_count
                 if not iteration_count:
                     break
-                if len(seen_targets) >= max_dispatch_targets:
-                    break
                 pseudo_c_text = merge_dispatch_pseudoc(pseudo_c_text or '', recovered_text)
                 pseudo_c_path.write_text(pseudo_c_text, encoding='utf-8', errors='replace')
+                if len(seen_targets) >= max_dispatch_targets:
+                    break
             targets_path = analysis_dir / 'jnic_dispatch_targets.txt'
             write_dispatch_targets(targets_path, all_targets)
             jnic_instruction_aliases = {
@@ -394,6 +393,21 @@ def run_pipeline(*, input_path: Path, out_dir: Path, requested_mode: str='AUTO',
             jni_register_res = enrich_jnic_register_from_jar(jni_register_res, jar_meta=jar_meta)
             job['analysis']['jni_register'] = jni_register_res
             write_json(jni_register_path, jni_register_res)
+        if jnic_keystream_bytes and isinstance(jni_calls_res, dict) and isinstance(jni_register_res, dict):
+            from detranspiler.deobfuscation.jnic_patterns.constant_pool import extract_constant_pool_models
+            from detranspiler.deobfuscation.jnic_patterns.string_decrypt import extract_string_decrypt_models
+            decryptors = extract_string_decrypt_models(pseudo_c=pseudo_c_text or '', binary_path=copied_input, keystream=jnic_keystream_bytes, jni_register=jni_register_res)
+            constant_pool_decoders = extract_constant_pool_models(pseudo_c=pseudo_c_text or '', binary_path=copied_input, keystream=jnic_keystream_bytes, jni_register=jni_register_res, functions_json_path=functions_json_path)
+            if decryptors or constant_pool_decoders:
+                jni_calls_res = dict(jni_calls_res)
+                if decryptors:
+                    jni_calls_res['jnic_string_decryptors'] = decryptors
+                    jni_calls_res['jnic_string_decryptors_resolved'] = len(decryptors)
+                if constant_pool_decoders:
+                    jni_calls_res['jnic_constant_pool_decoders'] = constant_pool_decoders
+                    jni_calls_res['jnic_constant_pool_decoders_resolved'] = len(constant_pool_decoders)
+                job['analysis']['jni_calls'] = jni_calls_res
+                write_json(jni_calls_path, jni_calls_res)
         native_index_res = build_native_method_index(exports=exports, jni_register=jni_register_res if isinstance(jni_register_res, dict) else None, jni_calls=jni_calls_res if isinstance(jni_calls_res, dict) else None, java_like=java_like_res if isinstance(java_like_res, dict) else None, jar_meta=jar_meta)
         jar_sources_index = pseudocode_dir / 'jar_sources'
         if jar_sources_index.is_dir():

@@ -2,8 +2,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+from detranspiler.deobfuscation.jnic_patterns.constant_pool_body import recover_constant_pool_decoder
 from detranspiler.deobfuscation.jnic_patterns.method_handles import recover_method_handle_resolver
 from detranspiler.deobfuscation.jnic_patterns.string_concat import find_string_concat_lowerings, render_string_concat
+from detranspiler.deobfuscation.jnic_patterns.string_decrypt_body import recover_string_decryptor
 from detranspiler.java.jni_descriptors import _jni_method_sig_to_java
 _ARG_INDEX_RE = re.compile('\\(\\*\\*\\(code\\s*\\*\\*\\)\\(\\*\\s*\\w+\\s*\\+\\s*0x568\\)\\)\\s*\\(\\s*\\w+\\s*,\\s*(?P<args>\\w+)\\s*,\\s*(?P<idx>\\d+)\\s*\\)')
 _RETURN_RE = re.compile(r'return\s+(?P<expr>[\w.\[\]+\-*/^&|<>!=, ]+);')
@@ -1074,6 +1076,8 @@ def recover_jnic_body(*, fn_symbol: str, block: Optional[str], jni_calls: Option
     decoded = dict(cfg.decoded_strings or {})
     instruction_trace = any(getattr(call, 'source_line', '').upper().startswith('CALL ') for call in calls)
     producers = [
+        lambda: recover_string_decryptor(fn_symbol=fn_symbol, calls=calls, jni_calls=jni_calls, param_types=param_types, param_names=param_names, ret_java=ret_java, class_internal=cfg.class_internal),
+        lambda: recover_constant_pool_decoder(fn_symbol=fn_symbol, block=block, calls=calls, jni_calls=jni_calls, param_types=param_types, param_names=param_names, ret_java=ret_java, class_internal=cfg.class_internal),
         lambda: _pattern_primitive_cache_decrypt(calls=calls, block=block, param_types=param_types, param_names=param_names, ret_java=ret_java),
         lambda: _pattern_invokedynamic_dispatch(calls=calls, param_types=param_types, param_names=param_names, ret_java=ret_java),
         lambda: recover_method_handle_resolver(fn_symbol=fn_symbol, calls=calls, jni_calls=jni_calls, param_types=param_types, param_names=param_names, ret_java=ret_java, class_internal=cfg.class_internal, native_index=cfg.native_index),

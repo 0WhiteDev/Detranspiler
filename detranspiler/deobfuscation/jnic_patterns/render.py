@@ -25,11 +25,11 @@ class JavaBodyBuilder:
         self.line(f"}} {header} {{")
         self._level += 1
 
-    def close(self) -> None:
+    def close(self, suffix: str = "") -> None:
         if self._level <= 0:
             raise ValueError("cannot close an unopened Java block")
         self._level -= 1
-        self.line("}")
+        self.line(f"}}{suffix}")
 
     def build(self) -> List[str]:
         if self._level:
