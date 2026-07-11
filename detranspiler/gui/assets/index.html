@@ -254,6 +254,23 @@
               <h2><span class="muted" id="sourcesPath">Select a file</span></h2>
               <pre class="source-code" id="sourcesCode"><code>Select a file from the tree.</code></pre>
             </div>
+            <aside class="provenance-panel panel">
+              <h2>Line provenance <span class="muted" id="provenanceLine">-</span></h2>
+              <div class="provenance-empty" id="provenanceEmpty">No evidence for this line.</div>
+              <div class="hidden" id="provenanceDetail">
+                <div class="provenance-sources" id="provenanceSources"></div>
+                <div class="provenance-confidence" id="provenanceConfidence"></div>
+                <dl class="provenance-meta" id="provenanceMeta"></dl>
+                <section class="provenance-section">
+                  <h3>Pseudo-C <span class="muted" id="provenancePseudoRange"></span></h3>
+                  <pre class="source-code provenance-pseudo" id="provenancePseudo"><code></code></pre>
+                </section>
+                <section class="provenance-section">
+                  <h3>JNI calls</h3>
+                  <div class="provenance-jni" id="provenanceJni"></div>
+                </section>
+              </div>
+            </aside>
           </div>
         </section>
 

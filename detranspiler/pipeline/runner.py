@@ -58,7 +58,7 @@ def run_pipeline(*, input_path: Path, out_dir: Path, requested_mode: str='AUTO',
     project_name: Optional[str] = None
     write_json(ghidra_dir / 'status.json', ghidra_status)
     job_id = str(uuid.uuid4())
-    job: Dict[str, Any] = {'job_id': job_id, 'created_at': utc_now_iso(), 'input': {'path': str(input_path.resolve()), 'name': input_path.name, 'size': input_path.stat().st_size, 'sha256': sha256, 'format': fmt}, 'mode': {'requested': requested_mode, 'resolved': resolved_mode}, 'analysis': {'lief': lief_meta, 'exports_count': len(exports), 'imports_count': len(imports), 'strings_count': len(strings)}, 'jni': {'detected': jni_detected, 'hits': jni_hits}, 'ghidra': ghidra_status, 'artifacts': {'out_dir': str(out_dir.resolve()), 'job_json': str((out_dir / 'job.json').resolve()), 'metadata_dir': str(metadata_dir.resolve()), 'preprocess_dir': str(preprocess_dir.resolve()), 'ghidra_dir': str(ghidra_dir.resolve()), 'pseudo_c_dir': str(pseudo_c_dir.resolve()), 'pseudocode_dir': str(pseudocode_dir.resolve()), 'analysis_dir': str(analysis_dir.resolve()), 'logs_dir': str(logs_dir.resolve()), 'pseudo_c_file': None, 'ghidra_functions_json': None, 'ghidra_strings_json': None, 'jni_register_json': None, 'jni_calls_json': None, 'deobfuscation_json': None, 'java_like_file': None, 'jni_export_sources_dir': None, 'jni_export_manifest': None, 'report_html': None, 'jni_stubs_file': None, 'jar_decompile_dir': None, 'java_validation_json': None}}
+    job: Dict[str, Any] = {'job_id': job_id, 'created_at': utc_now_iso(), 'input': {'path': str(input_path.resolve()), 'name': input_path.name, 'size': input_path.stat().st_size, 'sha256': sha256, 'format': fmt}, 'mode': {'requested': requested_mode, 'resolved': resolved_mode}, 'analysis': {'lief': lief_meta, 'exports_count': len(exports), 'imports_count': len(imports), 'strings_count': len(strings)}, 'jni': {'detected': jni_detected, 'hits': jni_hits}, 'ghidra': ghidra_status, 'artifacts': {'out_dir': str(out_dir.resolve()), 'job_json': str((out_dir / 'job.json').resolve()), 'metadata_dir': str(metadata_dir.resolve()), 'preprocess_dir': str(preprocess_dir.resolve()), 'ghidra_dir': str(ghidra_dir.resolve()), 'pseudo_c_dir': str(pseudo_c_dir.resolve()), 'pseudocode_dir': str(pseudocode_dir.resolve()), 'analysis_dir': str(analysis_dir.resolve()), 'logs_dir': str(logs_dir.resolve()), 'pseudo_c_file': None, 'ghidra_functions_json': None, 'ghidra_strings_json': None, 'jni_register_json': None, 'jni_calls_json': None, 'deobfuscation_json': None, 'java_like_file': None, 'jni_export_sources_dir': None, 'jni_export_manifest': None, 'report_html': None, 'jni_stubs_file': None, 'jar_decompile_dir': None, 'java_validation_json': None, 'source_provenance_json': None}}
     write_json(out_dir / 'job.json', job)
     write_json(metadata_dir / 'binary.json', job['input'])
     write_json(metadata_dir / 'exports.json', {'exports': exports})
@@ -557,6 +557,27 @@ def run_pipeline(*, input_path: Path, out_dir: Path, requested_mode: str='AUTO',
         write_json(method_recovery_path, method_recovery_doc)
         job['artifacts']['method_recovery_json'] = str(method_recovery_path.resolve())
         job['analysis']['method_recovery'] = method_recovery_doc
+    source_provenance_res: Dict[str, Any]
+    source_provenance_path = analysis_dir / 'source_provenance.json'
+    try:
+        from detranspiler.provenance import attach_export_provenance, build_source_provenance
+        source_provenance_res = build_source_provenance(out_dir=out_dir, output_path=source_provenance_path)
+        if source_provenance_res.get('output_path'):
+            job['artifacts']['source_provenance_json'] = source_provenance_res.get('output_path')
+            export_provenance = attach_export_provenance(provenance_path=source_provenance_path, export_dir=export_project_dir, summary=source_provenance_res)
+            source_provenance_res['export'] = export_provenance
+            job['artifacts']['recovered_project_provenance_json'] = export_provenance.get('output_path')
+    except Exception as e:
+        source_provenance_res = {'status': 'EXCEPTION', 'error': repr(e)}
+    job['analysis']['source_provenance'] = source_provenance_res
+    try:
+        from detranspiler.reporting.report import write_html_report
+        report_res = write_html_report(job=job, out_path=report_path)
+        if report_res.get('output_path'):
+            job['artifacts']['report_html'] = str(report_path.resolve())
+        job['analysis']['report'] = report_res
+    except Exception as e:
+        report_res = {'status': 'EXCEPTION', 'error': repr(e)}
     write_json(analysis_dir / 'recovery.json', recovery_res)
     write_json(analysis_dir / 'jar_decompile.json', jar_decompile_res)
     write_json(analysis_dir / 'final_sources.json', final_sources_res)

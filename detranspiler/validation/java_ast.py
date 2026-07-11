@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Tuple
 _CLASS_RE = re.compile(r'\b(?:class|record|enum)\s+([A-Za-z_$][\w$]*)')
 _TEMP_ASSIGN_RE = re.compile(r'(?m)^\s*(?P<name>(?:local_|temp_|tmp)[A-Za-z0-9_$]*)\s*=\s*(?P<value>[^;]+);')
 _DECL_RE = re.compile(r'\b[A-Za-z_$][\w$<>.?\[\]]*\s+([A-Za-z_$][\w$]*)\s*(?:=|;|,|\))')
-_METHOD_RE = re.compile(r'(?m)^[ \t]*(?:@[\w.$]+(?:\([^\r\n]*\))?[ \t]*)*(?P<mods>(?:(?:public|private|protected|static|final|synchronized|strictfp|abstract|native|default)\s+)*)(?P<ret>[A-Za-z_$][\w$.[\]<>?, \t]*)\s+(?P<name>[A-Za-z_$][\w$]*)\s*\((?P<params>[^)]*)\)(?:\s+throws\s+[\w$., <>?\[\]]+)?\s*(?P<end>[{;])')
+_METHOD_RE = re.compile(r'(?m)^[ \t]*(?:@[\w.$]+(?:\([^\r\n]*\))?[ \t]*)*(?P<mods>(?:(?:(?:public|private|protected|static|final|synchronized|strictfp|abstract|native|default)\s+)|(?:/\*[^\r\n]*?\*/\s*))*)(?P<ret>[A-Za-z_$][\w$.[\]<>?, \t]*)\s+(?P<name>[A-Za-z_$][\w$]*)\s*\((?P<params>[^)]*)\)(?:\s+throws\s+[\w$., <>?\[\]]+)?\s*(?P<end>[{;])')
 _NON_TYPE_PREFIXES = {'assert', 'break', 'case', 'catch', 'continue', 'do', 'else', 'for', 'if', 'new', 'return', 'switch', 'throw', 'try', 'while', 'yield'}
 
 def _split_parameters(params: str) -> Tuple[str, ...]:

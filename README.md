@@ -55,6 +55,7 @@ The tool does **not** promise perfect decompilation of every method. It combines
 | `analysis/re_map.html` | Interactive graph: Java methods, native functions, JNI calls |
 | `native_map/` | Per-method C files linked to Java `native` declarations |
 | `recovered_project/` | Exportable project tree with manifest and confidence metadata |
+| `analysis/source_provenance.json` | Line and method evidence linking Java to CFR, native functions, pseudo-C, and JNI calls |
 | `job.json` | Single machine-readable record of the entire analysis |
 
 ---
@@ -181,13 +182,13 @@ python -m detranspiler analyze native.dll \
 python -m detranspiler gui
 ```
 
-The GUI supports fresh analysis, loading an existing output folder (`job.json`), browsing recovered sources, opening reports, and exploring the native map.
+The GUI supports fresh analysis, loading an existing output folder (`job.json`), browsing recovered sources with line-level evidence, opening reports, and exploring the native map.
 
 ---
 
 ## Desktop GUI
 
-The desktop GUI provides the complete workflow in one workspace: configure or load an analysis, extract native libraries from JAR files, inspect reports and the RE map, and browse recovered Java and native code. It uses **pywebview** and keeps analysis local on your machine.
+The desktop GUI provides the complete workflow in one workspace: configure or load an analysis, extract native libraries from JAR files, inspect reports and the RE map, and browse recovered Java and native code. Selecting a Java line shows its source layers, semantic and mapping confidence, native function address, relevant JNI calls, and the corresponding pseudo-C fragment. It uses **pywebview** and keeps analysis local on your machine.
 
 <table>
   <tr>
@@ -261,6 +262,7 @@ Additional recovery mechanisms:
 - **HTML report** with recovery metrics, obfuscation summary, artifact links
 - **RE Map** (`re_map.html`): pan/zoom graph of Java classes, native functions, JNI APIs, registration edges
 - **Native Map** (`native_map/`): README plus one `.c` file per Java native method with decompiled body
+- **Source provenance** (`source_provenance.json`): compressed line ranges with method evidence, independent semantic/mapping confidence, native addresses, JNI traces, and pseudo-C references
 - **Recovery metrics** with honest per-class native recovery rate (recovered vs still-`native` in final sources)
 - **Method confidence** levels (`MINIMAL` through `HIGH`) and export filtering
 - **Job summarizer** CLI for terminal-friendly status
@@ -279,7 +281,7 @@ Built with **pywebview** (Edge WebView2 on Windows):
 | Report | Embedded analysis report |
 | RE Map | Interactive relationship graph |
 | Native Map | Tree of Java packages/classes/methods with C viewer and syntax highlighting |
-| Sources | Browse and view recovered `.java` files with syntax highlighting |
+| Sources | Inspect recovered `.java` line by line with source layers, confidence, JNI calls, and linked pseudo-C |
 | Doctor | Environment diagnostics inside the app |
 
 </details>
@@ -306,7 +308,8 @@ python -m detranspiler analyze <input> --out <dir> [options]
 | `--mode` | `AUTO`, `JNI`, `MANAGED`, `AOT`, `GENERIC_NATIVE` (default: `AUTO`) |
 | `--jar` | Companion JAR for CFR decompilation and guided recovery |
 | `--no-jar-decompile` | Skip CFR when a jar is provided |
-| `--no-java-validation` | Skip Java AST validation and safe source repairs | | `--javac-validation` | Run optional isolated javac validation after repairs |
+| `--no-java-validation` | Skip Java AST validation and safe source repairs |
+| `--javac-validation` | Run optional isolated javac validation after repairs |
 | `--no-ghidra` | Skip Ghidra headless decompilation |
 | `--ghidra-install-dir` | Ghidra root (or set `GHIDRA_INSTALL_DIR`) |
 | `--pseudo-c` | Existing `decompiled.c` instead of running Ghidra |
@@ -404,12 +407,14 @@ out/
     jni_calls.json
     method_confidence.json
     java_validation.json     # AST repairs and optional javac diagnostics
+    source_provenance.json # line/method evidence and native links
     ...                    # stage JSON artifacts
   native_map/
     README.md
     c/*.c                  # per-method decompiled C
   recovered_project/       # validated exportable IDE-friendly tree
     VALIDATION.json         # validation manifest and remaining errors
+    PROVENANCE.json         # export copy of source provenance metadata
     src/                    # repaired final Java sources
   logs/                    # Ghidra and tool logs
 ```
@@ -446,6 +451,7 @@ flowchart LR
     RAD[Radioegor overlay]
     REP[Jar repair]
     FIN[Final sources merge]
+    PROV[Line provenance]
   end
 
   subgraph out [Outputs]
@@ -453,6 +459,7 @@ flowchart LR
     RPT[report.html]
     MAP[re_map.html]
     NMAP[native_map/]
+    SIDE[source_provenance.json]
   end
 
   BIN --> LIEF
@@ -472,7 +479,12 @@ flowchart LR
   RAD --> REP
   REP --> FIN
   FIN --> SRC
-  FIN --> RPT
+  FIN --> PROV
+  REG --> PROV
+  CALLS --> PROV
+  GHD --> PROV
+  PROV --> RPT
+  PROV --> SIDE
   CG --> MAP
   GHD --> NMAP
 ```
@@ -492,6 +504,7 @@ flowchart LR
 | `detranspiler/recovery/` | Metrics, confidence, strategy, project export |
 | `detranspiler/reporting/` | HTML report, RE map, native map, summarizer |
 | `detranspiler/validation/` | Java structure parser, safe repairs, isolated javac |
+| `detranspiler/provenance/` | Line/method evidence model, pseudo-C lookup, export sidecar |
 | `detranspiler/gui/` | Desktop shell, API bridge, asset bundle |
 
 ---
@@ -505,6 +518,18 @@ Detranspiler reports recovery against **application classes** in final merged so
 - Per-class and global rates are computed from `native_index.json` cross-checked with final Java output
 
 This avoids inflated percentages from duplicate layers or stub files. Low-confidence bodies may still appear in intermediate layers but are flagged in `method_confidence.json` and filtered on export when configured.
+
+---
+
+## Source provenance
+
+Every final Java line is assigned to a compressed evidence range in `analysis/source_provenance.json`. Evidence records keep source layers such as CFR, RegisterNatives, JNIC reconstruction, Ghidra pseudo-C, JNI traces, and Java validation separate from their confidence values.
+
+For linked native methods, the sidecar records the JVM descriptor, function symbol and address, C signature, pseudo-C line span, JNI call summary, and method body/declaration ranges. Semantic confidence describes how strongly the Java body is supported; mapping confidence describes how strongly the Java method is linked to the native function.
+
+The GUI loads summaries with each source file and resolves the heavier pseudo-C fragment only after a line is selected. Paths are restricted to the active analysis directory, and browsing evidence never executes the input JAR or native binary.
+
+The same sidecar is copied to `recovered_project/PROVENANCE.json` and referenced from `MANIFEST.json`.
 
 ---
 

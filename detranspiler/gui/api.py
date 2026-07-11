@@ -260,8 +260,16 @@ class DetranspilerApi:
         if not isinstance(pseudo, str):
             return {'status': 'ERROR', 'error': 'No active session'}
         doc = read_source_file(rel_path=rel_path, pseudocode_dir=Path(pseudo))
-        doc['status'] = 'OK'
+        doc.setdefault('status', 'OK')
         return doc
+
+    def get_source_line_provenance(self, rel_path: str, line: int) -> Dict[str, Any]:
+        from detranspiler.gui.views.sources import read_source_line_provenance
+
+        pseudo = self._session_paths.get('pseudocode_dir')
+        if not isinstance(pseudo, str):
+            return {'status': 'ERROR', 'error': 'No active session'}
+        return read_source_line_provenance(rel_path=rel_path, line=line, pseudocode_dir=Path(pseudo))
 
     def get_native_map_tree(self) -> Dict[str, Any]:
         from detranspiler.gui.views.native_map import build_native_map_tree

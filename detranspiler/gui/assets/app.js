@@ -9,6 +9,7 @@
     viewUrls: { report: null, map: null },
     outDir: "",
     pollTimer: null,
+    sourceProvenanceRequest: 0,
   };
 
   const fields = {
@@ -319,7 +320,7 @@
       if (filter && !entry.path.toLowerCase().includes(filter)) continue;
       const li = document.createElement("li");
       const btn = document.createElement("button");
-      btn.innerHTML = `<span>${escapeHtml(entry.path)}</span>`;
+      btn.innerHTML = "<span>" + escapeHtml(entry.path) + "</span>" + (entry.provenance_ranges ? '<span class="tag tag-both" title="Line provenance available" aria-hidden="true">P</span>' : "");
       btn.addEventListener("click", async () => {
         treeEl.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
@@ -330,11 +331,110 @@
     }
   }
 
+  function sourceProvenanceRanges(provenance) {
+    const evidence = provenance && provenance.evidence ? provenance.evidence : {};
+    return (provenance && provenance.ranges ? provenance.ranges : []).map((range) => {
+      const item = evidence[range.evidence_id] || {};
+      const sources = item.sources || [];
+      let tone = "unknown";
+      if (sources.includes("Java validation")) tone = "repair";
+      else if (sources.includes("CFR") || sources.includes("JVM bytecode")) tone = "cfr";
+      else if (sources.some((source) => /JNIC|Radioegor|Ghidra|JNI/.test(source))) tone = "native";
+      return Object.assign({}, range, { tone, label: sources.join(" + ") || "Unknown source" });
+    });
+  }
+
   async function showSourceFile(relPath) {
     const doc = await api().get_source_file(relPath);
     $("#sourcesPath").textContent = relPath;
     const code = doc.content || "";
-    setCode($("#sourcesCode"), code, relPath.endsWith(".java") ? "java" : null);
+    const provenance = doc.provenance || {};
+    const ranges = sourceProvenanceRanges(provenance);
+    if (window.CodeHighlight && window.CodeHighlight.setInteractiveCode) {
+      window.CodeHighlight.setInteractiveCode($("#sourcesCode"), code, relPath.endsWith(".java") ? "java" : null, ranges, (line) => showSourceLineProvenance(relPath, line));
+    } else {
+      setCode($("#sourcesCode"), code, relPath.endsWith(".java") ? "java" : null);
+    }
+    const methods = provenance.methods || [];
+    const method = methods.find((item) => item.recovered) || methods.find((item) => item.body_evidence_id) || methods[0];
+    const preferredLine = method && method.body_evidence_id ? Math.min(method.end_line, Math.max(method.start_line + 1, method.body_start_line || method.start_line + 1)) : method ? method.start_line : 1;
+    const preferred = $("#sourcesCode").querySelector('[data-line="' + preferredLine + '"]');
+    if (preferred) preferred.click();
+    else showSourceLineProvenance(relPath, 1);
+  }
+
+  function renderConfidence(confidence) {
+    const values = [
+      ["Semantic", confidence && confidence.semantic],
+      ["Mapping", confidence && confidence.mapping],
+    ];
+    return values.map(([label, value]) => {
+      const available = typeof value === "number";
+      const percent = available ? Math.max(0, Math.min(100, Math.round(value * 100))) : 0;
+      return '<div class="confidence-row"><span>' + escapeHtml(label) + '</span><div class="confidence-track"><span style="width:' + percent + '%"></span></div><strong>' + (available ? percent + "%" : "n/a") + "</strong></div>";
+    }).join("");
+  }
+
+  function renderProvenanceDetail(data) {
+    const empty = $("#provenanceEmpty");
+    const detail = $("#provenanceDetail");
+    if (!data || data.status !== "OK" || !data.evidence) {
+      empty.classList.remove("hidden");
+      detail.classList.add("hidden");
+      $("#provenanceLine").textContent = "-";
+      return;
+    }
+    empty.classList.add("hidden");
+    detail.classList.remove("hidden");
+    $("#provenanceLine").textContent = "L" + data.line;
+    const evidence = data.evidence;
+    $("#provenanceSources").innerHTML = (evidence.sources || []).map((source) => '<span class="provenance-chip">' + escapeHtml(source) + "</span>").join("");
+    $("#provenanceConfidence").innerHTML = renderConfidence(evidence.confidence || {});
+    const native = evidence.native || {};
+    const rows = [
+      ["Role", data.range && data.range.role],
+      ["Evidence", evidence.kind],
+      ["Method", evidence.method],
+      ["Descriptor", evidence.descriptor],
+      ["Java signature", native.java_signature],
+      ["Function", native.symbol],
+      ["Address", native.address],
+      ["C signature", native.c_signature],
+      ["Native C", native.c_file],
+    ].filter((row) => row[1] != null && row[1] !== "");
+    $("#provenanceMeta").innerHTML = rows.map((row) => "<dt>" + escapeHtml(row[0]) + "</dt><dd><code>" + escapeHtml(row[1]) + "</code></dd>").join("");
+    const calls = data.jni_calls || [];
+    $("#provenanceJni").innerHTML = calls.length ? calls.slice(0, 20).map((call) => '<div class="jni-row"><code>' + escapeHtml(call.jni_name || "JNI") + '</code><span>' + escapeHtml(call.category || "") + '</span><small>L' + escapeHtml(call.line || "?") + "</small></div>").join("") : '<span class="muted">None</span>';
+    const pseudo = data.pseudo_c;
+    const pseudoSection = $("#provenancePseudo").closest(".provenance-section");
+    if (pseudo && pseudo.content) {
+      pseudoSection.classList.remove("hidden");
+      $("#provenancePseudoRange").textContent = "L" + pseudo.start_line + "-" + pseudo.end_line;
+      const pseudoRanges = calls.filter((call) => Number(call.line) >= pseudo.start_line && Number(call.line) <= pseudo.end_line).map((call) => ({
+        start_line: Number(call.line),
+        end_line: Number(call.line),
+        tone: "jni",
+        label: call.jni_name || "JNI call",
+      }));
+      window.CodeHighlight.setInteractiveCode($("#provenancePseudo"), pseudo.content, "c", pseudoRanges, null, pseudo.start_line, { tone: "native", label: "Ghidra pseudo-C" });
+    } else {
+      pseudoSection.classList.add("hidden");
+      setPlainCode($("#provenancePseudo"), "");
+      $("#provenancePseudoRange").textContent = "";
+    }
+  }
+
+  async function showSourceLineProvenance(relPath, line) {
+    if (!api()) return;
+    const requestId = ++state.sourceProvenanceRequest;
+    try {
+      const data = await api().get_source_line_provenance(relPath, line);
+      if (requestId !== state.sourceProvenanceRequest) return;
+      renderProvenanceDetail(data);
+    } catch (error) {
+      if (requestId !== state.sourceProvenanceRequest) return;
+      renderProvenanceDetail(null);
+    }
   }
 
   async function refreshNativeMapNav() {

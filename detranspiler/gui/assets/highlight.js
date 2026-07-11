@@ -144,11 +144,73 @@
     codeEl.textContent = text || "";
   }
 
+  function setInteractiveCode(container, code, language, ranges, onSelect, firstLine, fallbackRange) {
+    if (!container) return;
+    container.textContent = "";
+    const codeEl = document.createElement("code");
+    codeEl.className = "source-lines hl-lang-" + (language || "").toLowerCase();
+    const normalized = String(code || "").replace(/\r\n?/g, "\n");
+    const lines = normalized.endsWith("\n") ? normalized.slice(0, -1).split("\n") : normalized.split("\n");
+    const orderedRanges = Array.isArray(ranges) ? [...ranges].sort((a, b) => Number(a.start_line || 0) - Number(b.start_line || 0)) : [];
+    const initialLine = Number(firstLine) || 1;
+    let rangeIndex = 0;
+    for (let index = 0; index < lines.length; index += 1) {
+      const lineNumber = initialLine + index;
+      while (rangeIndex + 1 < orderedRanges.length && lineNumber > Number(orderedRanges[rangeIndex].end_line || 0)) {
+        rangeIndex += 1;
+      }
+      const candidate = orderedRanges[rangeIndex] || {};
+      const range = Number(candidate.start_line || 0) <= lineNumber && lineNumber <= Number(candidate.end_line || 0) ? candidate : fallbackRange || {};
+      const row = document.createElement("span");
+      const interactive = typeof onSelect === "function";
+      row.className = "source-line provenance-" + (range.tone || "unknown") + (interactive ? " source-line-action" : "");
+      row.dataset.line = String(lineNumber);
+      if (interactive) {
+        row.tabIndex = 0;
+        row.setAttribute("role", "button");
+      }
+      row.title = range.label || "Unknown source";
+      const number = document.createElement("span");
+      number.className = "source-line-number";
+      number.textContent = String(lineNumber);
+      const marker = document.createElement("span");
+      marker.className = "source-line-marker";
+      const content = document.createElement("span");
+      content.className = "source-line-text";
+      const value = lines[index] || " ";
+      if ((language || "").toLowerCase() === "java") {
+        content.innerHTML = highlightJava(value);
+      } else if ((language || "").toLowerCase() === "c") {
+        content.innerHTML = highlightC(value);
+      } else {
+        content.textContent = value;
+      }
+      if (interactive) {
+        const select = () => {
+          codeEl.querySelectorAll(".source-line.selected").forEach((item) => item.classList.remove("selected"));
+          row.classList.add("selected");
+          onSelect(lineNumber);
+        };
+        row.addEventListener("click", select);
+        row.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            select();
+          }
+        });
+      }
+      row.append(number, marker, content);
+      codeEl.appendChild(row);
+    }
+    container.appendChild(codeEl);
+  }
+
   global.CodeHighlight = {
     escapeHtml,
     highlightJava,
     highlightC,
     setHighlightedCode,
+    setInteractiveCode,
     setPlainCode,
   };
 })(window);
