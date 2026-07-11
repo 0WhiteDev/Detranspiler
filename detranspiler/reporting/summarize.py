@@ -45,6 +45,14 @@ def summarize_job_dict(job: Dict[str, Any]) -> str:
         with_jni = sum((1 for m in mr if isinstance(m, dict) and any((s == 'jni' for s in m.get('sources') or []))))
         with_jar = sum((1 for m in mr if isinstance(m, dict) and any((s == 'jar' for s in m.get('sources') or []))))
         lines.append(f'  Method recovery map: {len(mr)} methods ({with_jni} JNI, {with_jar} CFR-guided)')
+    validation = analysis.get('java_validation') if isinstance(analysis.get('java_validation'), dict) else {}
+    if validation:
+        lines.append(f"  Java AST: {validation.get('files_ast_valid', 0)}/{validation.get('files_total', 0)} valid, {validation.get('repairs_total', 0)} safe repair(s)")
+        javac = validation.get('javac') if isinstance(validation.get('javac'), dict) else {}
+        if javac.get('compilation_rate') is not None:
+            lines.append(f"  javac: {int(float(javac.get('compilation_rate')) * 100)}% files compilable")
+        elif javac.get('status'):
+            lines.append(f"  javac: {javac.get('status')}")
     artifacts = job.get('artifacts') if isinstance(job.get('artifacts'), dict) else {}
     if artifacts.get('report_html'):
         lines.append(f"  Report: {artifacts.get('report_html')}")

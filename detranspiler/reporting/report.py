@@ -122,6 +122,31 @@ def _render_anti_analysis(data: Any) -> str:
         parts.append('</ul>')
     return '\n'.join(parts)
 
+def _render_java_validation(data: Any) -> str:
+    if not isinstance(data, dict):
+        return '<p class="empty">Java validation unavailable.</p>'
+    javac = data.get('javac') if isinstance(data.get('javac'), dict) else {}
+    javac_before = data.get('javac_before_repairs') if isinstance(data.get('javac_before_repairs'), dict) else {}
+    compilation_rate = javac.get('compilation_rate')
+    compilation = f'{int(float(compilation_rate) * 100)}%' if compilation_rate is not None else escape_html(str(javac.get('status') or 'disabled'))
+    before_rate = javac_before.get('compilation_rate')
+    compilation_before = f'{int(float(before_rate) * 100)}%' if before_rate is not None else escape_html(str(javac_before.get('status') or 'disabled'))
+    parts = [kv_table([('Status', escape_html(str(data.get('status') or 'n/a'))), ('Parser', escape_html(str(data.get('parser') or 'n/a'))), ('AST-valid before', f"{data.get('files_ast_valid_before', 0)}/{data.get('files_total', 0)}"), ('AST-valid after', f"{data.get('files_ast_valid', 0)}/{data.get('files_total', 0)}"), ('Files repaired', data.get('files_repaired', 0)), ('Safe repairs', data.get('repairs_total', 0)), ('Remaining AST errors', data.get('remaining_ast_errors', 0)), ('javac before repairs', compilation_before), ('javac after repairs', compilation)])]
+    categories = data.get('remaining_error_categories') or {}
+    if isinstance(categories, dict) and categories:
+        rows = ''.join(f'<tr><td><code>{escape_html(str(name))}</code></td><td>{count}</td></tr>' for name, count in sorted(categories.items()))
+        parts.append("<h3>Remaining errors</h3><table class='data-table'><tr><th>Category</th><th>Count</th></tr>" + rows + '</table>')
+    diagnostics = javac.get('diagnostics') or []
+    if diagnostics:
+        rows = []
+        for item in diagnostics[:100]:
+            if not isinstance(item, dict):
+                continue
+            location = f"{item.get('path', '')}:{item.get('line', '')}"
+            rows.append(f"<tr><td><code>{escape_html(location)}</code></td><td>{escape_html(str(item.get('message') or ''))}</td></tr>")
+        parts.append("<h3>javac diagnostics</h3><table class='data-table'><tr><th>Location</th><th>Error</th></tr>" + ''.join(rows) + '</table>')
+    return ''.join(parts)
+
 def _render_method_confidence(data: Any) -> str:
     if not isinstance(data, dict):
         return '<p class="empty">n/a</p>'
@@ -206,6 +231,7 @@ def write_html_report(*, job: Dict[str, Any], out_path: Path) -> Dict[str, Any]:
     from detranspiler.native.index import resolve_native_index
     native_index = resolve_native_index(job=job, analysis_dir=analysis_dir, native_index=native_index if isinstance(native_index, dict) else None)
     method_confidence = _get(job, 'analysis.method_confidence', {})
+    java_validation = _get(job, 'analysis.java_validation', {})
     anti_analysis = _get(job, 'analysis.anti_analysis', {})
     export_project = _get(job, 'analysis.export_project', {})
     jnic_patterns = _get(job, 'analysis.jnic_patterns', {})
@@ -225,7 +251,7 @@ def write_html_report(*, job: Dict[str, Any], out_path: Path) -> Dict[str, Any]:
     main += f"""<section class="section" id="recovery">{panel('Recovery summary', kv_table([('Overall rate', f'{recovery_rate}%'), ('Native methods', recovery.get('native_methods_total') if isinstance(recovery, dict) else recovery.get('methods_total') if isinstance(recovery, dict) else None), ('Recovered', recovery.get('native_methods_recovered') if isinstance(recovery, dict) else recovery.get('methods_recovered') if isinstance(recovery, dict) else None), ('Still native', recovery.get('native_methods_remaining') if isinstance(recovery, dict) else recovery.get('methods_stub') if isinstance(recovery, dict) else None), ('Classes', recovery.get('classes_total') if isinstance(recovery, dict) else None), ('Stubs patched', repaired), ('Native repair', repaired_native)]) + _render_recovery_files(recovery.get('classes') or recovery.get('files') if isinstance(recovery, dict) else None))}</section>"""
     method_recovery_html = _render_method_recovery(_get(job, 'analysis.java_like.method_recovery') or _get(job, 'analysis.method_recovery.methods'))
     main += f"""<section class="section" id="methods">{panel('Method recovery map', method_recovery_html)}</section>"""
-    main += f"""<section class="section" id="artifacts">{panel('Artifacts & outputs', kv_table([('Pseudo-C', file_link(artifacts.get('pseudo_c_file'), base_dir=analysis_dir)), ('Ghidra functions', file_link(artifacts.get('ghidra_functions_json'), base_dir=analysis_dir)), ('JNI register', file_link(artifacts.get('jni_register_json'), base_dir=analysis_dir)), ('JNI calls', file_link(artifacts.get('jni_calls_json'), base_dir=analysis_dir)), ('Java aggregate', file_link(artifacts.get('java_like_file'), base_dir=analysis_dir)), ('Method recovery JSON', file_link(artifacts.get('method_recovery_json'), base_dir=analysis_dir)), ('JNI sources', file_link(java_like.get('jni_sources_dir') if isinstance(java_like, dict) else None, base_dir=analysis_dir)), ('JNI exports', file_link(artifacts.get('jni_export_sources_dir'), base_dir=analysis_dir)), ('Java sources', file_link(artifacts.get('sources_dir') or (final_sources.get('output_dir') if isinstance(final_sources, dict) else None), base_dir=analysis_dir)), ('Recovered project', file_link(export_project.get('output_dir') if isinstance(export_project, dict) else None, base_dir=analysis_dir)), ('RE map', file_link(map_href or artifacts.get('re_map_html'), base_dir=analysis_dir, label='re_map.html'))]))}</section>"""
+    main += f"""<section class="section" id="artifacts">{panel('Artifacts & outputs', kv_table([('Pseudo-C', file_link(artifacts.get('pseudo_c_file'), base_dir=analysis_dir)), ('Ghidra functions', file_link(artifacts.get('ghidra_functions_json'), base_dir=analysis_dir)), ('JNI register', file_link(artifacts.get('jni_register_json'), base_dir=analysis_dir)), ('JNI calls', file_link(artifacts.get('jni_calls_json'), base_dir=analysis_dir)), ('Java aggregate', file_link(artifacts.get('java_like_file'), base_dir=analysis_dir)), ('Method recovery JSON', file_link(artifacts.get('method_recovery_json'), base_dir=analysis_dir)), ('Java validation', file_link(artifacts.get('java_validation_json'), base_dir=analysis_dir)), ('JNI sources', file_link(java_like.get('jni_sources_dir') if isinstance(java_like, dict) else None, base_dir=analysis_dir)), ('JNI exports', file_link(artifacts.get('jni_export_sources_dir'), base_dir=analysis_dir)), ('Java sources', file_link(artifacts.get('sources_dir') or (final_sources.get('output_dir') if isinstance(final_sources, dict) else None), base_dir=analysis_dir)), ('Recovered project', file_link(export_project.get('output_dir') if isinstance(export_project, dict) else None, base_dir=analysis_dir)), ('RE map', file_link(map_href or artifacts.get('re_map_html'), base_dir=analysis_dir, label='re_map.html'))]))}</section>"""
     main += f"""<section class="section" id="analysis">{panel('Pipeline analysis', kv_table([('Ghidra state', escape_html(str(_get(job, 'ghidra.state', '')))), ('Ghidra run', escape_html(str(_get(job, 'ghidra.run.status', '')))), ('RegisterNatives', jni_register.get('register_calls_total') if isinstance(jni_register, dict) else None), ('Static JNI tables', jni_register.get('static_method_tables_total') if isinstance(jni_register, dict) else None), ('JNI API calls', jni_calls.get('calls_total') if isinstance(jni_calls, dict) else None), ('JAR decompile', jar_decompile.get('status') if isinstance(jar_decompile, dict) else 'SKIPPED'), ('Java sources', sources_total if sources_total else None)]))}</section>"""
     strings_list = ''.join((f"<li><code>{escape_html(str(s.get('value', '')))}</code> <span class='muted'>({escape_html(str(s.get('method', '')))})</span></li>" for s in (string_decrypt.get('strings') or [])[:24] if isinstance(s, dict)))
     strings_body = f"""<p>Recovered strings: <strong>{decrypted_count}</strong> · XOR loops: <strong>{(string_decrypt.get('xor_loops_detected', 0) if isinstance(string_decrypt, dict) else 0)}</strong></p><ul class='list-compact'>{strings_list or '<li class="empty">none</li>'}</ul>"""
@@ -235,10 +261,11 @@ def write_html_report(*, job: Dict[str, Any], out_path: Path) -> Dict[str, Any]:
     main += f"""<section class="section" id="jni">{panel('JNI call analysis', _render_jni_calls_summary(jni_calls.get('functions') if isinstance(jni_calls, dict) else None, jni_calls.get('counts_by_name') if isinstance(jni_calls, dict) else None))}</section>"""
     main += f"""<section class="section" id="deobfuscation">{panel('Deobfuscation', _render_deobfuscation(deobfuscation))}</section>"""
     main += f"""<section class="section" id="anti">{panel('Anti-analysis', _render_anti_analysis(anti_analysis))}</section>"""
+    main += f"""<section class="section" id="java-validation">{panel('Java validation', _render_java_validation(java_validation))}</section>"""
     main += f"""<section class="section" id="confidence">{panel('Method confidence', _render_method_confidence(method_confidence))}</section>"""
     main += f"""<section class="section" id="jnic">{panel('JNIC / transpiler', _render_jnic_patterns(jnic_patterns))}</section>"""
     main += '<section class="section" id="job"><details class="collapsible panel"><summary>Full job.json</summary>' + json_pre(job) + '</details></section>'
-    sidebar = side_nav([('Overview', '#overview'), ('Recovery', '#recovery'), ('Methods', '#methods'), ('Artifacts', '#artifacts'), ('Analysis', '#analysis'), ('Strings', '#strings'), ('Call graph', '#callgraph'), ('Patterns', '#patterns'), ('JNI', '#jni'), ('Deobfuscation', '#deobfuscation'), ('Anti-analysis', '#anti'), ('Confidence', '#confidence'), ('JNIC', '#jnic'), ('job.json', '#job')])
+    sidebar = side_nav([('Overview', '#overview'), ('Recovery', '#recovery'), ('Methods', '#methods'), ('Artifacts', '#artifacts'), ('Analysis', '#analysis'), ('Strings', '#strings'), ('Call graph', '#callgraph'), ('Patterns', '#patterns'), ('JNI', '#jni'), ('Deobfuscation', '#deobfuscation'), ('Anti-analysis', '#anti'), ('Java validation', '#java-validation'), ('Confidence', '#confidence'), ('JNIC', '#jnic'), ('job.json', '#job')])
     script = "\n<script>\n(() => {\n  const input = document.getElementById('methodSearch');\n  const table = document.getElementById('methodRecoveryTable');\n  if (input && table) {\n    input.addEventListener('input', () => {\n      const q = input.value.trim().toLowerCase();\n      for (const row of table.querySelectorAll('tr[data-search]')) {\n        row.classList.toggle('hidden', q && !row.dataset.search.includes(q));\n      }\n    });\n  }\n})();\n</script>\n"
     page = render_page(title=title, subtitle=subtitle, current_nav='report', sidebar_html=sidebar, main_html=main, extra_script=script, report_href=report_href, map_href=map_href)
     out_path.write_text(page, encoding='utf-8')

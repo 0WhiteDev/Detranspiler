@@ -306,6 +306,7 @@ python -m detranspiler analyze <input> --out <dir> [options]
 | `--mode` | `AUTO`, `JNI`, `MANAGED`, `AOT`, `GENERIC_NATIVE` (default: `AUTO`) |
 | `--jar` | Companion JAR for CFR decompilation and guided recovery |
 | `--no-jar-decompile` | Skip CFR when a jar is provided |
+| `--no-java-validation` | Skip Java AST validation and safe source repairs | | `--javac-validation` | Run optional isolated javac validation after repairs |
 | `--no-ghidra` | Skip Ghidra headless decompilation |
 | `--ghidra-install-dir` | Ghidra root (or set `GHIDRA_INSTALL_DIR`) |
 | `--pseudo-c` | Existing `decompiled.c` instead of running Ghidra |
@@ -402,11 +403,14 @@ out/
     jni_register.json
     jni_calls.json
     method_confidence.json
+    java_validation.json     # AST repairs and optional javac diagnostics
     ...                    # stage JSON artifacts
   native_map/
     README.md
     c/*.c                  # per-method decompiled C
-  recovered_project/       # exportable IDE-friendly tree
+  recovered_project/       # validated exportable IDE-friendly tree
+    VALIDATION.json         # validation manifest and remaining errors
+    src/                    # repaired final Java sources
   logs/                    # Ghidra and tool logs
 ```
 
@@ -487,6 +491,7 @@ flowchart LR
 | `detranspiler/native/` | Native index, flattening recovery, interprocedural |
 | `detranspiler/recovery/` | Metrics, confidence, strategy, project export |
 | `detranspiler/reporting/` | HTML report, RE map, native map, summarizer |
+| `detranspiler/validation/` | Java structure parser, safe repairs, isolated javac |
 | `detranspiler/gui/` | Desktop shell, API bridge, asset bundle |
 
 ---
@@ -500,6 +505,19 @@ Detranspiler reports recovery against **application classes** in final merged so
 - Per-class and global rates are computed from `native_index.json` cross-checked with final Java output
 
 This avoids inflated percentages from duplicate layers or stub files. Low-confidence bodies may still appear in intermediate layers but are flagged in `method_confidence.json` and filtered on export when configured.
+
+---
+
+## Java validation
+
+Final Java sources pass through a validation stage before recovered_project is exported:
+
+1. Parse source structure and method bodies.
+2. Apply conservative repairs for unambiguous missing semicolons, inferable temporary variables, literal return mismatches, known JDK imports, and identical duplicate methods.
+3. Optionally run javac with annotation processing, implicit compilation, external classpaths, and external source paths disabled.
+4. Record unresolved structural and compiler errors without guessing unsafe fixes.
+
+Results are written to analysis/java_validation.json, included in the HTML report, and copied to recovered_project/VALIDATION.json. javac validation is disabled by default and can be enabled from the GUI or with --javac-validation.
 
 ---
 

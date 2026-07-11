@@ -17,6 +17,8 @@ def _build_parser() -> argparse.ArgumentParser:
     a.add_argument('--strings-json', default=None, help='Optional path to an existing Ghidra strings.json')
     a.add_argument('--jar', default=None, help='Optional path to a JAR to recover class/method modifiers')
     a.add_argument('--no-jar-decompile', action='store_true', help='Skip CFR decompilation of --jar')
+    a.add_argument('--no-java-validation', action='store_true', help='Skip Java AST validation and safe repairs')
+    a.add_argument('--javac-validation', action='store_true', help='Optionally compile recovered Java in an isolated javac invocation')
     a.add_argument('--force', action='store_true')
     e = sub.add_parser('extract', help='Safely extract a native library from a JAR')
     e.add_argument('--jar', required=True, help='Input JAR path')
@@ -46,10 +48,10 @@ def main(argv=None) -> int:
         ghidra_install_dir = args.ghidra_install_dir
         if ghidra_install_dir is None:
             ghidra_install_dir = os.environ.get('GHIDRA_INSTALL_DIR')
-        job = run_pipeline(input_path=in_path, out_dir=out_dir, requested_mode=args.mode, use_ghidra=not args.no_ghidra, ghidra_install_dir=Path(ghidra_install_dir) if ghidra_install_dir else None, external_pseudo_c_path=Path(args.pseudo_c) if args.pseudo_c else None, external_functions_json_path=Path(args.functions_json) if args.functions_json else None, external_strings_json_path=Path(args.strings_json) if args.strings_json else None, jar_path=Path(args.jar) if args.jar else None, force=args.force, decompile_jar=not args.no_jar_decompile)
+        job = run_pipeline(input_path=in_path, out_dir=out_dir, requested_mode=args.mode, use_ghidra=not args.no_ghidra, ghidra_install_dir=Path(ghidra_install_dir) if ghidra_install_dir else None, external_pseudo_c_path=Path(args.pseudo_c) if args.pseudo_c else None, external_functions_json_path=Path(args.functions_json) if args.functions_json else None, external_strings_json_path=Path(args.strings_json) if args.strings_json else None, jar_path=Path(args.jar) if args.jar else None, force=args.force, decompile_jar=not args.no_jar_decompile, validate_java=not args.no_java_validation, compile_java=args.javac_validation)
         analysis = job.get('analysis') if isinstance(job.get('analysis'), dict) else {}
         failures = []
-        for key in ('java_like', 'jni_register', 'jni_calls', 'report'):
+        for key in ('java_like', 'jni_register', 'jni_calls', 'java_validation', 'report'):
             item = analysis.get(key)
             if isinstance(item, dict) and item.get('status') == 'EXCEPTION':
                 failures.append(key)

@@ -16,7 +16,7 @@ from detranspiler.pipeline.util import (
     write_json,
 )
 
-def run_pipeline(*, input_path: Path, out_dir: Path, requested_mode: str='AUTO', use_ghidra: bool=True, ghidra_install_dir: Optional[Path]=None, external_pseudo_c_path: Optional[Path]=None, external_functions_json_path: Optional[Path]=None, external_strings_json_path: Optional[Path]=None, jar_path: Optional[Path]=None, force: bool=False, decompile_jar: bool=True, progress_callback: Optional[ProgressCallback]=None) -> Dict[str, Any]:
+def run_pipeline(*, input_path: Path, out_dir: Path, requested_mode: str='AUTO', use_ghidra: bool=True, ghidra_install_dir: Optional[Path]=None, external_pseudo_c_path: Optional[Path]=None, external_functions_json_path: Optional[Path]=None, external_strings_json_path: Optional[Path]=None, jar_path: Optional[Path]=None, force: bool=False, decompile_jar: bool=True, validate_java: bool=True, compile_java: bool=False, progress_callback: Optional[ProgressCallback]=None) -> Dict[str, Any]:
     global strings_json_path
     emit_progress(progress_callback, phase='init', percent=2, message='Initializing analysis workspace…')
     input_path = input_path.expanduser()
@@ -58,7 +58,7 @@ def run_pipeline(*, input_path: Path, out_dir: Path, requested_mode: str='AUTO',
     project_name: Optional[str] = None
     write_json(ghidra_dir / 'status.json', ghidra_status)
     job_id = str(uuid.uuid4())
-    job: Dict[str, Any] = {'job_id': job_id, 'created_at': utc_now_iso(), 'input': {'path': str(input_path.resolve()), 'name': input_path.name, 'size': input_path.stat().st_size, 'sha256': sha256, 'format': fmt}, 'mode': {'requested': requested_mode, 'resolved': resolved_mode}, 'analysis': {'lief': lief_meta, 'exports_count': len(exports), 'imports_count': len(imports), 'strings_count': len(strings)}, 'jni': {'detected': jni_detected, 'hits': jni_hits}, 'ghidra': ghidra_status, 'artifacts': {'out_dir': str(out_dir.resolve()), 'job_json': str((out_dir / 'job.json').resolve()), 'metadata_dir': str(metadata_dir.resolve()), 'preprocess_dir': str(preprocess_dir.resolve()), 'ghidra_dir': str(ghidra_dir.resolve()), 'pseudo_c_dir': str(pseudo_c_dir.resolve()), 'pseudocode_dir': str(pseudocode_dir.resolve()), 'analysis_dir': str(analysis_dir.resolve()), 'logs_dir': str(logs_dir.resolve()), 'pseudo_c_file': None, 'ghidra_functions_json': None, 'ghidra_strings_json': None, 'jni_register_json': None, 'jni_calls_json': None, 'deobfuscation_json': None, 'java_like_file': None, 'jni_export_sources_dir': None, 'jni_export_manifest': None, 'report_html': None, 'jni_stubs_file': None, 'jar_decompile_dir': None}}
+    job: Dict[str, Any] = {'job_id': job_id, 'created_at': utc_now_iso(), 'input': {'path': str(input_path.resolve()), 'name': input_path.name, 'size': input_path.stat().st_size, 'sha256': sha256, 'format': fmt}, 'mode': {'requested': requested_mode, 'resolved': resolved_mode}, 'analysis': {'lief': lief_meta, 'exports_count': len(exports), 'imports_count': len(imports), 'strings_count': len(strings)}, 'jni': {'detected': jni_detected, 'hits': jni_hits}, 'ghidra': ghidra_status, 'artifacts': {'out_dir': str(out_dir.resolve()), 'job_json': str((out_dir / 'job.json').resolve()), 'metadata_dir': str(metadata_dir.resolve()), 'preprocess_dir': str(preprocess_dir.resolve()), 'ghidra_dir': str(ghidra_dir.resolve()), 'pseudo_c_dir': str(pseudo_c_dir.resolve()), 'pseudocode_dir': str(pseudocode_dir.resolve()), 'analysis_dir': str(analysis_dir.resolve()), 'logs_dir': str(logs_dir.resolve()), 'pseudo_c_file': None, 'ghidra_functions_json': None, 'ghidra_strings_json': None, 'jni_register_json': None, 'jni_calls_json': None, 'deobfuscation_json': None, 'java_like_file': None, 'jni_export_sources_dir': None, 'jni_export_manifest': None, 'report_html': None, 'jni_stubs_file': None, 'jar_decompile_dir': None, 'java_validation_json': None}}
     write_json(out_dir / 'job.json', job)
     write_json(metadata_dir / 'binary.json', job['input'])
     write_json(metadata_dir / 'exports.json', {'exports': exports})
@@ -473,6 +473,19 @@ def run_pipeline(*, input_path: Path, out_dir: Path, requested_mode: str='AUTO',
     except Exception as e:
         final_sources_res = {'status': 'EXCEPTION', 'error': repr(e)}
     job['analysis']['final_sources'] = final_sources_res
+    emit_progress(progress_callback, phase='java_validation', percent=85, message='Validating and repairing recovered Java sources...')
+    java_validation_res: Dict[str, Any] = {'status': 'SKIPPED_DISABLED'}
+    java_validation_path = analysis_dir / 'java_validation.json'
+    if validate_java:
+        try:
+            from detranspiler.validation import validate_and_repair_java
+            validation_sources = Path(str(final_sources_res.get('output_dir'))) if isinstance(final_sources_res, dict) and final_sources_res.get('output_dir') else pseudocode_dir / 'sources'
+            java_validation_res = validate_and_repair_java(sources_root=validation_sources, compile_with_javac=compile_java)
+        except Exception as e:
+            java_validation_res = {'status': 'EXCEPTION', 'error': repr(e), 'javac_enabled': compile_java}
+    write_json(java_validation_path, java_validation_res)
+    job['analysis']['java_validation'] = java_validation_res
+    job['artifacts']['java_validation_json'] = str(java_validation_path.resolve())
     method_confidence_res: Dict[str, Any]
     method_confidence_path = analysis_dir / 'method_confidence.json'
     try:

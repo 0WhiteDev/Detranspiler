@@ -139,6 +139,19 @@
             </div>
           </div>
 
+          <div class="panel">
+            <h2>Java Validation</h2>
+            <div class="form-grid">
+              <div class="field">
+                <label class="check-row"><input type="checkbox" id="validateJava" checked> Parse Java AST and apply safe repairs</label>
+              </div>
+              <div class="field">
+                <label class="check-row"><input type="checkbox" id="compileJava"> Run isolated javac validation</label>
+                <div class="hint">Optional. Annotation processing and external classpaths are disabled.</div>
+              </div>
+            </div>
+          </div>
+
           <div class="actions">
             <button class="btn btn-primary" id="btnStart"><svg class="icon" aria-hidden="true"><use href="#icon-play"></use></svg><span>Start Detranspilation</span></button>
             <button class="btn" id="btnLoad"><svg class="icon" aria-hidden="true"><use href="#icon-folder-open"></use></svg><span>Load Existing Session</span></button>

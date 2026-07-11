@@ -23,6 +23,8 @@
     useJar: $("#useJar"),
     decompileJar: $("#decompileJar"),
     jarPath: $("#jarPath"),
+    validateJava: $("#validateJava"),
+    compileJava: $("#compileJava"),
     extractJar: $("#extractJar"),
     extractOut: $("#extractOut"),
     extractMode: $("#extractMode"),
@@ -53,6 +55,8 @@
       use_jar: fields.useJar.checked,
       decompile_jar: fields.decompileJar.checked,
       jar_path: fields.jarPath.value.trim(),
+      validate_java: fields.validateJava.checked,
+      compile_java: fields.compileJava.checked,
     };
   }
 
@@ -69,8 +73,11 @@
     fields.useJar.checked = !!data.use_jar;
     fields.decompileJar.checked = data.decompile_jar !== false;
     fields.jarPath.value = data.jar_path || "";
+    fields.validateJava.checked = data.validate_java !== false;
+    fields.compileJava.checked = !!data.compile_java;
     toggleJarFields();
     toggleGhidraFields();
+    toggleJavaValidation();
   }
 
   function toggleJarFields() {
@@ -82,6 +89,11 @@
   function toggleGhidraFields() {
     const on = fields.useGhidra.checked;
     fields.ghidraDir.disabled = !on;
+  }
+
+  function toggleJavaValidation() {
+    fields.compileJava.disabled = !fields.validateJava.checked;
+    if (!fields.validateJava.checked) fields.compileJava.checked = false;
   }
 
   const frameIds = {
@@ -551,6 +563,7 @@
 
     fields.useJar.addEventListener("change", toggleJarFields);
     fields.useGhidra.addEventListener("change", toggleGhidraFields);
+    fields.validateJava.addEventListener("change", toggleJavaValidation);
 
     $("#btnStart").addEventListener("click", async () => {
       const config = readForm();

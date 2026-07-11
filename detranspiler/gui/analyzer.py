@@ -117,7 +117,7 @@ class AnalysisWorker:
             pseudo_c = config.get('pseudo_c')
             functions_json = config.get('functions_json')
             strings_json = config.get('strings_json')
-            job = run_pipeline(input_path=input_path, out_dir=out_dir, requested_mode=str(config.get('mode') or 'AUTO'), use_ghidra=use_ghidra, ghidra_install_dir=ghidra_install_dir if use_ghidra else None, external_pseudo_c_path=Path(str(pseudo_c)).expanduser() if pseudo_c else None, external_functions_json_path=Path(str(functions_json)).expanduser() if functions_json else None, external_strings_json_path=Path(str(strings_json)).expanduser() if strings_json else None, jar_path=jar_path, force=bool(config.get('force')), decompile_jar=bool(config.get('decompile_jar', True)), progress_callback=self._set_progress)
+            job = run_pipeline(input_path=input_path, out_dir=out_dir, requested_mode=str(config.get('mode') or 'AUTO'), use_ghidra=use_ghidra, ghidra_install_dir=ghidra_install_dir if use_ghidra else None, external_pseudo_c_path=Path(str(pseudo_c)).expanduser() if pseudo_c else None, external_functions_json_path=Path(str(functions_json)).expanduser() if functions_json else None, external_strings_json_path=Path(str(strings_json)).expanduser() if strings_json else None, jar_path=jar_path, force=bool(config.get('force')), decompile_jar=bool(config.get('decompile_jar', True)), validate_java=bool(config.get('validate_java', True)), compile_java=bool(config.get('compile_java', False)), progress_callback=self._set_progress)
             summary = discover_artifacts(job, out_dir)
             with self._lock:
                 self._job = job
