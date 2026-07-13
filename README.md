@@ -176,6 +176,15 @@ python -m detranspiler analyze native.dll \
   --force
 ```
 
+Compare two versions of a native library:
+
+```bash
+python -m detranspiler diff old.dll new.dll --out ./version-diff
+```
+
+The command accepts native binaries, completed analysis directories, or their
+`job.json` files. Existing analyses are reused without running the pipeline again.
+
 ### Launch desktop GUI
 
 ```bash
@@ -188,7 +197,7 @@ The GUI supports fresh analysis, loading an existing output folder (`job.json`),
 
 ## Desktop GUI
 
-The desktop GUI provides the complete workflow in one workspace: configure or load an analysis, extract native libraries from JAR files, inspect reports and the RE map, and browse recovered Java and native code. Selecting a Java line shows its source layers, semantic and mapping confidence, native function address, relevant JNI calls, and the corresponding pseudo-C fragment. It uses **pywebview** and keeps analysis local on your machine.
+The desktop GUI provides the complete workflow in one workspace: configure or load an analysis, extract native libraries from JAR files, inspect reports and the RE map, and browse recovered Java and native code. Its Tools area separates binary preparation, differential analysis with Version Diff, and environment diagnostics. Selecting a Java line shows its source layers, semantic and mapping confidence, native function address, relevant JNI calls, and the corresponding pseudo-C fragment. It uses **pywebview** and keeps analysis local on your machine.
 
 <table>
   <tr>
@@ -339,6 +348,34 @@ the recognized JNIC loader. Unknown transforms, ambiguous loaders, missing resou
 invalid ranges, and non-AMD64 payloads return a non-zero exit code with a stable error
 identifier.
 
+### `diff`
+
+Compare successive versions of native code and recovered Java evidence.
+
+```text
+python -m detranspiler diff <old> <new> [options]
+```
+
+Each input can be a DLL, SO, dylib, completed analysis directory, or `job.json`.
+Raw binaries are analyzed automatically. The report covers added and removed JNI
+methods, changed `RegisterNatives` mappings, strings, stable call-graph edges,
+confidence changes, and recovered pseudocode differences.
+
+| Option | Description |
+|--------|-------------|
+| `--out` | Output directory; defaults to `diff-<old>-to-<new>` |
+| `--old-jar`, `--new-jar` | Optional companion JARs used only during fresh analysis |
+| `--mode` | Analysis mode for raw native inputs |
+| `--no-ghidra` | Analyze raw inputs without Ghidra |
+| `--ghidra-install-dir` | Ghidra root (or set `GHIDRA_INSTALL_DIR`) |
+| `--no-jar-decompile` | Skip CFR for companion JARs |
+| `--no-java-validation` | Skip Java validation for fresh analyses |
+| `--force` | Replace the diff output directory |
+
+The command never loads a native library or executes JAR classes. Missing evidence
+is marked unavailable rather than inferred. Function addresses are normalized with
+instruction fingerprints, and ambiguous graph nodes are excluded and counted.
+
 ### `doctor`
 
 Print dependency and toolchain diagnostics (Python, lief, pefile, Java, Ghidra).
@@ -418,6 +455,10 @@ out/
     src/                    # repaired final Java sources
   logs/                    # Ghidra and tool logs
 ```
+
+After `diff`, the output directory contains `diff.json`, `diff.txt`, and a standalone
+`diff.html`. When raw binaries are supplied it also contains `old_analysis/` and
+`new_analysis/`.
 
 ---
 
@@ -505,6 +546,7 @@ flowchart LR
 | `detranspiler/reporting/` | HTML report, RE map, native map, summarizer |
 | `detranspiler/validation/` | Java structure parser, safe repairs, isolated javac |
 | `detranspiler/provenance/` | Line/method evidence model, pseudo-C lookup, export sidecar |
+| `detranspiler/diffing/` | Version snapshots, stable matching, differential reports |
 | `detranspiler/gui/` | Desktop shell, API bridge, asset bundle |
 
 ---

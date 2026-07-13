@@ -9,6 +9,7 @@
     viewUrls: { report: null, map: null },
     outDir: "",
     pollTimer: null,
+    diffPollTimer: null,
     sourceProvenanceRequest: 0,
   };
 
@@ -29,6 +30,14 @@
     extractJar: $("#extractJar"),
     extractOut: $("#extractOut"),
     extractMode: $("#extractMode"),
+    diffOld: $("#diffOld"),
+    diffNew: $("#diffNew"),
+    diffOut: $("#diffOut"),
+    diffOldJar: $("#diffOldJar"),
+    diffNewJar: $("#diffNewJar"),
+    diffMode: $("#diffMode"),
+    diffUseGhidra: $("#diffUseGhidra"),
+    diffForce: $("#diffForce"),
   };
 
   function waitForApi(maxMs) {
@@ -76,6 +85,14 @@
     fields.jarPath.value = data.jar_path || "";
     fields.validateJava.checked = data.validate_java !== false;
     fields.compileJava.checked = !!data.compile_java;
+    fields.diffOld.value = data.diff_old || "";
+    fields.diffNew.value = data.diff_new || "";
+    fields.diffOut.value = data.diff_out || "";
+    fields.diffOldJar.value = data.diff_old_jar || "";
+    fields.diffNewJar.value = data.diff_new_jar || "";
+    fields.diffMode.value = data.diff_mode || "AUTO";
+    fields.diffUseGhidra.checked = data.diff_use_ghidra !== false;
+    fields.diffForce.checked = !!data.diff_force;
     toggleJarFields();
     toggleGhidraFields();
     toggleJavaValidation();
@@ -251,6 +268,70 @@
     $("#btnOpenExtractOut").disabled = false;
   }
 
+  function readDiffForm() {
+    return {
+      old: fields.diffOld.value.trim(),
+      new: fields.diffNew.value.trim(),
+      out: fields.diffOut.value.trim(),
+      old_jar: fields.diffOldJar.value.trim(),
+      new_jar: fields.diffNewJar.value.trim(),
+      mode: fields.diffMode.value,
+      use_ghidra: fields.diffUseGhidra.checked,
+      ghidra_install_dir: fields.ghidraDir.value.trim(),
+      decompile_jar: true,
+      validate_java: true,
+      force: fields.diffForce.checked,
+    };
+  }
+
+  function renderDiffResult(snap) {
+    const box = $("#diffResult");
+    box.classList.remove("hidden", "ok", "error");
+    if (snap.error) {
+      box.classList.add("error");
+      box.innerHTML = "<strong>Differential analysis failed</strong><div>" + escapeHtml(snap.error) + "</div>";
+      $("#btnOpenDiffOut").disabled = true;
+      $("#diffReportShell").classList.add("hidden");
+      return;
+    }
+    const result = snap.result || {};
+    const summary = result.summary || {};
+    const details = [
+      ["JNI methods", String((summary.jni_methods_added || 0) + (summary.jni_methods_removed || 0) + (summary.jni_methods_changed || 0))],
+      ["Registrations", String(summary.registrations_changed || 0)],
+      ["Strings", String((summary.strings_added || 0) + (summary.strings_removed || 0) + (summary.string_counts_changed || 0))],
+      ["Call edges", String((summary.call_edges_added || 0) + (summary.call_edges_removed || 0))],
+      ["Confidence", String((summary.confidence_added || 0) + (summary.confidence_removed || 0) + (summary.confidence_changed || 0))],
+      ["Pseudocode", String((summary.pseudocode_added || 0) + (summary.pseudocode_removed || 0) + (summary.pseudocode_changed || 0))],
+    ];
+    box.classList.add("ok");
+    box.innerHTML = "<strong>Differential analysis complete</strong><dl>" + details.map((item) => "<dt>" + escapeHtml(item[0]) + "</dt><dd><code>" + escapeHtml(item[1]) + "</code></dd>").join("") + "</dl>";
+    $("#btnOpenDiffOut").disabled = false;
+    if (snap.report_url) {
+      const frame = $("#diffReportFrame");
+      if (frame.src !== snap.report_url) frame.src = snap.report_url;
+      $("#diffReportShell").classList.remove("hidden");
+    }
+  }
+
+  async function pollDiffProgress() {
+    if (state.diffPollTimer) clearTimeout(state.diffPollTimer);
+    const snap = await api().get_diff_progress();
+    const pct = Number(snap.percent || 0);
+    $("#diffProgressLabel").textContent = snap.message || "Differential analysis";
+    $("#diffProgressPct").textContent = pct + "%";
+    $("#diffProgressFill").style.width = pct + "%";
+    $("#diffConsole").innerHTML = (snap.logs || []).map((line) => {
+      const cls = line.includes("ERROR") ? "line-err" : "line-info";
+      return '<div class="' + cls + '">' + escapeHtml(line) + "</div>";
+    }).join("");
+    if (snap.running) {
+      state.diffPollTimer = setTimeout(pollDiffProgress, 500);
+      return;
+    }
+    $("#btnRunDiff").disabled = false;
+    if (snap.error || snap.result) renderDiffResult(snap);
+  }
   function appendConsole(lines) {
     const box = $("#console");
     box.innerHTML = (lines || [])
@@ -661,6 +742,69 @@
       if (out) await api().reveal_in_explorer(out);
     });
 
+    $("#btnPickDiffOldFile").addEventListener("click", async () => {
+      try {
+        const picked = await api().pick_file("native_or_job");
+        if (picked) fields.diffOld.value = picked;
+      } catch (error) {
+        renderDiffResult({ error: "Could not open file dialog: " + String(error) });
+      }
+    });
+
+    $("#btnPickDiffOldFolder").addEventListener("click", async () => {
+      const picked = await api().pick_file("folder");
+      if (picked) fields.diffOld.value = picked;
+    });
+
+    $("#btnPickDiffNewFile").addEventListener("click", async () => {
+      try {
+        const picked = await api().pick_file("native_or_job");
+        if (picked) fields.diffNew.value = picked;
+      } catch (error) {
+        renderDiffResult({ error: "Could not open file dialog: " + String(error) });
+      }
+    });
+
+    $("#btnPickDiffNewFolder").addEventListener("click", async () => {
+      const picked = await api().pick_file("folder");
+      if (picked) fields.diffNew.value = picked;
+    });
+
+    $("#btnPickDiffOut").addEventListener("click", async () => {
+      const picked = await api().pick_file("folder");
+      if (picked) fields.diffOut.value = picked;
+    });
+
+    $("#btnPickDiffOldJar").addEventListener("click", async () => {
+      const picked = await api().pick_file("jar");
+      if (picked) fields.diffOldJar.value = picked;
+    });
+
+    $("#btnPickDiffNewJar").addEventListener("click", async () => {
+      const picked = await api().pick_file("jar");
+      if (picked) fields.diffNewJar.value = picked;
+    });
+
+    $("#btnRunDiff").addEventListener("click", async () => {
+      const button = $("#btnRunDiff");
+      button.disabled = true;
+      $("#diffProgressWrap").classList.remove("hidden");
+      $("#diffResult").classList.add("hidden");
+      $("#diffReportShell").classList.add("hidden");
+      $("#diffReportFrame").src = "about:blank";
+      const response = await api().start_diff(readDiffForm());
+      if (!response.ok) {
+        button.disabled = false;
+        renderDiffResult({ error: response.error });
+        return;
+      }
+      pollDiffProgress();
+    });
+
+    $("#btnOpenDiffOut").addEventListener("click", async () => {
+      const out = fields.diffOut.value.trim();
+      if (out) await api().reveal_in_explorer(out);
+    });
     fields.useJar.addEventListener("change", toggleJarFields);
     fields.useGhidra.addEventListener("change", toggleGhidraFields);
     fields.validateJava.addEventListener("change", toggleJavaValidation);

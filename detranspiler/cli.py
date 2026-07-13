@@ -38,6 +38,18 @@ def _build_parser() -> argparse.ArgumentParser:
     g = sub.add_parser('gui', help='Launch desktop GUI (requires pywebview)')
     g.add_argument('--width', type=int, default=None)
     g.add_argument('--height', type=int, default=None)
+    f = sub.add_parser('diff', help='Compare two native binaries or completed analyses')
+    f.add_argument('old', help='Old native binary, analysis directory, or job.json')
+    f.add_argument('new', help='New native binary, analysis directory, or job.json')
+    f.add_argument('--out', default=None, help='Output directory')
+    f.add_argument('--old-jar', default=None, help='Optional companion JAR for the old binary')
+    f.add_argument('--new-jar', default=None, help='Optional companion JAR for the new binary')
+    f.add_argument('--mode', default='AUTO', choices=['AUTO', 'MANAGED', 'JNI', 'AOT', 'GENERIC_NATIVE'])
+    f.add_argument('--no-ghidra', action='store_true')
+    f.add_argument('--ghidra-install-dir', default=None)
+    f.add_argument('--no-jar-decompile', action='store_true')
+    f.add_argument('--no-java-validation', action='store_true')
+    f.add_argument('--force', action='store_true')
     return p
 
 def main(argv=None) -> int:
@@ -113,6 +125,34 @@ def main(argv=None) -> int:
     if args.command == 'gui':
         from detranspiler.gui.app import launch_gui
         return launch_gui(width=args.width, height=args.height)
+    if args.command == 'diff':
+        from detranspiler.diffing import run_diff
+        from detranspiler.diffing.session import DiffError
+        old_path = Path(args.old)
+        new_path = Path(args.new)
+        out_dir = Path(args.out) if args.out else Path(f'diff-{old_path.stem}-to-{new_path.stem}')
+        ghidra_install_dir = args.ghidra_install_dir or os.environ.get('GHIDRA_INSTALL_DIR')
+        try:
+            result = run_diff(
+                old_path=old_path,
+                new_path=new_path,
+                out_dir=out_dir,
+                old_jar=Path(args.old_jar) if args.old_jar else None,
+                new_jar=Path(args.new_jar) if args.new_jar else None,
+                mode=args.mode,
+                use_ghidra=not args.no_ghidra,
+                ghidra_install_dir=Path(ghidra_install_dir) if ghidra_install_dir else None,
+                decompile_jar=not args.no_jar_decompile,
+                validate_java=not args.no_java_validation,
+                force=args.force,
+            )
+        except (DiffError, FileNotFoundError, FileExistsError, ValueError) as exc:
+            print(f'ERROR: {exc}')
+            return 1
+        print(result['artifacts']['text'])
+        print(result['artifacts']['html'])
+        print(result['artifacts']['json'])
+        return 0
     raise SystemExit(2)
 if __name__ == '__main__':
     raise SystemExit(main())

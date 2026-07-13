@@ -43,6 +43,7 @@ class AnalysisFileServer:
         self._analysis_dir: Optional[Path] = None
         self._port: Optional[int] = None
         self._lock = threading.Lock()
+        self._probe_filename = 'report.html'
 
     @property
     def base_url(self) -> Optional[str]:
@@ -61,17 +62,19 @@ class AnalysisFileServer:
         self._thread = None
         self._port = None
         self._analysis_dir = None
+        self._probe_filename = 'report.html'
 
-    def serve(self, analysis_dir: Path) -> str:
+    def serve(self, analysis_dir: Path, *, probe_filename: str='report.html') -> str:
         analysis_dir = analysis_dir.expanduser().resolve()
         if not analysis_dir.is_dir():
             raise FileNotFoundError(str(analysis_dir))
         with self._lock:
-            if self._analysis_dir == analysis_dir and self._port is not None:
+            if self._analysis_dir == analysis_dir and self._port is not None and self._probe_filename == probe_filename:
                 ready = self._probe_ready()
                 if ready:
                     return self.base_url or ''
             self._stop_unlocked()
+            self._probe_filename = probe_filename
             handler = partial(_AnalysisHandler, directory=str(analysis_dir))
             self._server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
             self._port = self._server.server_address[1]
@@ -88,7 +91,7 @@ class AnalysisFileServer:
         if not base:
             return False
         try:
-            with urllib.request.urlopen(f'{base}report.html', timeout=0.5) as resp:
+            with urllib.request.urlopen(f'{base}{self._probe_filename}', timeout=0.5) as resp:
                 return resp.status == 200
         except Exception:
             return False

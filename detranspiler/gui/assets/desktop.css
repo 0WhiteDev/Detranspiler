@@ -180,6 +180,7 @@ a:focus-visible {
 
 #viewSetup,
 #viewExtractor,
+#viewDiff,
 #viewDoctor {
   width: min(100%, 1060px);
   margin: 0 auto;

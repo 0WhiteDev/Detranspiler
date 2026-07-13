@@ -16,6 +16,7 @@
     <symbol id="icon-folder-code" viewBox="0 0 24 24"><path d="M20 19a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-7l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3"/><path d="m10 17-2 2 2 2M14 21l2-2-2-2"/></symbol>
     <symbol id="icon-package" viewBox="0 0 24 24"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9Z"/><path d="m4.2 7.4 7.8 4.5 7.8-4.5M12 12v9"/><path d="m8 5.2 8 4.6"/></symbol>
     <symbol id="icon-activity" viewBox="0 0 24 24"><path d="M3 12h4l2-7 4 14 2-7h6"/></symbol>
+    <symbol id="icon-diff" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4M4 7h11a4 4 0 0 1 4 4v1"/><path d="m16 21 4-4-4-4m4 4H9a4 4 0 0 1-4-4v-1"/></symbol>
     <symbol id="icon-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7Z"/></symbol>
     <symbol id="icon-folder-open" viewBox="0 0 24 24"><path d="M6 14 8 5h12l-2 9"/><path d="M3 4h5l2 3M3 4v16h15l3-10H6L3 20"/></symbol>
     <symbol id="icon-external" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3"/><path d="M18 13v7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h7"/></symbol>
@@ -40,7 +41,11 @@
         <button class="nav-btn" data-view="sources" id="navSources" disabled><svg class="icon" aria-hidden="true"><use href="#icon-folder-code"></use></svg><span>Sources</span> <span class="tag" id="tagSources">-</span></button>
         <div class="divider"></div>
         <h2>Tools</h2>
+        <div class="nav-subcategory">Binary preparation</div>
         <button class="nav-btn" data-view="extractor" id="navExtractor"><svg class="icon" aria-hidden="true"><use href="#icon-package"></use></svg><span>Native Extractor</span></button>
+        <div class="nav-subcategory">Differential analysis</div>
+        <button class="nav-btn" data-view="diff" id="navDiff"><svg class="icon" aria-hidden="true"><use href="#icon-diff"></use></svg><span>Version Diff</span></button>
+        <div class="nav-subcategory">Environment</div>
         <button class="nav-btn" data-view="doctor" id="navDoctor"><svg class="icon" aria-hidden="true"><use href="#icon-activity"></use></svg><span>Doctor</span></button>
         <div class="sidebar-footer">
           <span id="appVersionMeta">Detranspiler</span>
@@ -274,6 +279,92 @@
           </div>
         </section>
 
+        <section class="view" id="viewDiff">
+          <h1 class="section-title">Version Diff</h1>
+          <p class="section-sub">Compare native binaries or completed analysis sessions.</p>
+
+          <div class="panel">
+            <h2>Versions</h2>
+            <div class="form-grid">
+              <div class="field" style="grid-column: 1 / -1">
+                <label>Old binary or analysis</label>
+                <div class="field-row">
+                  <input type="text" id="diffOld" placeholder="DLL, SO, DYLIB, job.json, or analysis folder">
+                  <button class="btn" id="btnPickDiffOldFile"><svg class="icon" aria-hidden="true"><use href="#icon-file"></use></svg><span>File</span></button>
+                  <button class="btn" id="btnPickDiffOldFolder"><svg class="icon" aria-hidden="true"><use href="#icon-folder-open"></use></svg><span>Folder</span></button>
+                </div>
+              </div>
+              <div class="field" style="grid-column: 1 / -1">
+                <label>New binary or analysis</label>
+                <div class="field-row">
+                  <input type="text" id="diffNew" placeholder="DLL, SO, DYLIB, job.json, or analysis folder">
+                  <button class="btn" id="btnPickDiffNewFile"><svg class="icon" aria-hidden="true"><use href="#icon-file"></use></svg><span>File</span></button>
+                  <button class="btn" id="btnPickDiffNewFolder"><svg class="icon" aria-hidden="true"><use href="#icon-folder-open"></use></svg><span>Folder</span></button>
+                </div>
+              </div>
+              <div class="field" style="grid-column: 1 / -1">
+                <label>Output directory</label>
+                <div class="field-row">
+                  <input type="text" id="diffOut" placeholder="C:path	oersion-diff">
+                  <button class="btn" id="btnPickDiffOut"><svg class="icon" aria-hidden="true"><use href="#icon-folder-open"></use></svg><span>Browse</span></button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h2>Fresh binary analysis</h2>
+            <div class="form-grid">
+              <div class="field">
+                <label>Old companion JAR</label>
+                <div class="field-row">
+                  <input type="text" id="diffOldJar" placeholder="Optional">
+                  <button class="btn" id="btnPickDiffOldJar"><svg class="icon" aria-hidden="true"><use href="#icon-folder-open"></use></svg><span>Browse</span></button>
+                </div>
+              </div>
+              <div class="field">
+                <label>New companion JAR</label>
+                <div class="field-row">
+                  <input type="text" id="diffNewJar" placeholder="Optional">
+                  <button class="btn" id="btnPickDiffNewJar"><svg class="icon" aria-hidden="true"><use href="#icon-folder-open"></use></svg><span>Browse</span></button>
+                </div>
+              </div>
+              <div class="field">
+                <label>Analysis mode</label>
+                <select id="diffMode">
+                  <option value="AUTO">AUTO</option>
+                  <option value="JNI">JNI</option>
+                  <option value="MANAGED">MANAGED</option>
+                  <option value="AOT">AOT</option>
+                  <option value="GENERIC_NATIVE">GENERIC_NATIVE</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="check-row"><input type="checkbox" id="diffUseGhidra" checked> Use configured Ghidra installation</label>
+                <label class="check-row"><input type="checkbox" id="diffForce"> Replace output directory</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn btn-primary" id="btnRunDiff"><svg class="icon" aria-hidden="true"><use href="#icon-diff"></use></svg><span>Compare Versions</span></button>
+            <button class="btn" id="btnOpenDiffOut" disabled><svg class="icon" aria-hidden="true"><use href="#icon-external"></use></svg><span>Open Output Folder</span></button>
+          </div>
+
+          <div class="progress-wrap hidden" id="diffProgressWrap">
+            <div class="progress-head">
+              <span id="diffProgressLabel">Preparing differential analysis</span>
+              <span id="diffProgressPct">0%</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" id="diffProgressFill"></div></div>
+            <div class="console" id="diffConsole"></div>
+          </div>
+
+          <div class="extract-result hidden" id="diffResult"></div>
+          <div class="diff-report-shell hidden" id="diffReportShell">
+            <iframe class="artifact-frame diff-report-frame" id="diffReportFrame" title="Version differential report"></iframe>
+          </div>
+        </section>
         <section class="view" id="viewDoctor">
           <h1 class="section-title">Environment Doctor</h1>
           <p class="section-sub">Check Python dependencies, Java, and Ghidra configuration.</p>

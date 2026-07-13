@@ -631,6 +631,30 @@ html, body {
 }
 
 
+.nav-subcategory {
+  margin: 9px 10px 2px;
+  color: #687482;
+  font-size: 9px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.diff-report-shell {
+  height: min(68vh, 760px);
+  margin-top: 18px;
+  overflow: hidden;
+  border: 1px solid var(--stroke);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.diff-report-shell .diff-report-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
 .extract-result {
   margin-top: 16px;
   border: 1px solid var(--stroke);

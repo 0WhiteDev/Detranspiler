@@ -45,6 +45,9 @@ def stat_card(value: str, label: str, *, extra: str='') -> str:
     return f'<div class="stat"><strong>{escape_html(value)}</strong><span>{escape_html(label)}</span>{extra_html}</div>'
 
 def render_nav(*, current: str, report_href: Optional[str]=None, map_href: Optional[str]=None) -> str:
+    if current == 'diff':
+        href = report_href or 'diff.html'
+        return f'<div class="brand">Detranspiler</div><div class="nav-links"><a class="nav-link active" href="{escape_html(href)}">Diff report</a></div><div class="topbar-author"><a href="https://github.com/0WhiteDev" target="_blank" rel="noopener noreferrer">0WhiteDev</a></div>'
     items = [('Report', report_href or 'report.html', current == 'report'), ('RE Map', map_href or 're_map.html', current == 'map')]
     links = []
     for label, href, active in items:

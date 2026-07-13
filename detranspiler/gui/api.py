@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 
 import detranspiler
 from detranspiler.gui.analyzer import AnalysisWorker
+from detranspiler.gui.diff_tool import DiffWorker
 from detranspiler.gui.session import load_job
 from detranspiler.gui.server import AnalysisFileServer
 from detranspiler.gui.settings import load_settings, save_settings as persist_settings
@@ -18,7 +19,10 @@ class DetranspilerApi:
 
     def __init__(self) -> None:
         self._worker = AnalysisWorker(on_update=self._on_worker_update)
+        self._diff_worker = DiffWorker()
         self._server = AnalysisFileServer()
+        self._diff_server = AnalysisFileServer()
+        self._diff_report_url: Optional[str] = None
         self._view_urls: Dict[str, Optional[str]] = {'report': None, 'map': None}
         self._session_paths: Dict[str, Optional[str]] = {
             'out_dir': None,
@@ -63,6 +67,11 @@ class DetranspilerApi:
             result = window.create_file_dialog(
                 webview.OPEN_DIALOG,
                 file_types=('Native libraries (*.dll;*.so;*.dylib)', 'All files (*.*)'),
+            )
+        elif kind == 'native_or_job':
+            result = window.create_file_dialog(
+                webview.OPEN_DIALOG,
+                file_types=('Native libraries or analysis job (*.dll;*.so;*.dylib;*.json)', 'All files (*.*)'),
             )
         elif kind == 'jar':
             result = window.create_file_dialog(
@@ -111,6 +120,50 @@ class DetranspilerApi:
             return {"ok": False, "code": "UNEXPECTED_ERROR", "error": str(exc)}
         return {"ok": True, "result": result}
 
+    def start_diff(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        if self._worker.snapshot().get('running'):
+            return {'ok': False, 'error': 'Main analysis is already running'}
+        if self._diff_worker.snapshot().get('running'):
+            return {'ok': False, 'error': 'Differential analysis is already running'}
+        settings = load_settings()
+        settings.update({
+            'diff_old': str(config.get('old') or ''),
+            'diff_new': str(config.get('new') or ''),
+            'diff_out': str(config.get('out') or ''),
+            'diff_old_jar': str(config.get('old_jar') or ''),
+            'diff_new_jar': str(config.get('new_jar') or ''),
+            'diff_mode': str(config.get('mode') or 'AUTO'),
+            'diff_force': bool(config.get('force')),
+            'diff_use_ghidra': bool(config.get('use_ghidra', True)),
+        })
+        persist_settings(settings)
+        self._diff_server.stop()
+        self._diff_report_url = None
+        try:
+            self._diff_worker.start(config)
+            return {'ok': True}
+        except Exception as exc:
+            return {'ok': False, 'error': str(exc)}
+
+    def _activate_diff_result(self, result: Dict[str, Any]) -> Optional[str]:
+        artifacts = result.get('artifacts') if isinstance(result.get('artifacts'), dict) else {}
+        html_path = artifacts.get('html')
+        if not isinstance(html_path, str) or not Path(html_path).is_file():
+            return None
+        base = self._diff_server.serve(Path(html_path).parent, probe_filename=Path(html_path).name)
+        self._diff_report_url = f'{base}{Path(html_path).name}'
+        return self._diff_report_url
+
+    def get_diff_progress(self) -> Dict[str, Any]:
+        snap = self._diff_worker.snapshot()
+        result = snap.get('result')
+        if isinstance(result, dict) and not snap.get('error') and self._diff_report_url is None:
+            try:
+                self._activate_diff_result(result)
+            except Exception as exc:
+                snap['error'] = str(exc)
+        snap['report_url'] = self._diff_report_url
+        return snap
 
     def run_doctor(self) -> Dict[str, Any]:
         from detranspiler.doctor import collect_diagnostics
@@ -225,6 +278,8 @@ class DetranspilerApi:
     def start_analysis(self, config: Dict[str, Any]) -> Dict[str, Any]:
         if self._worker.snapshot().get('running'):
             return {'ok': False, 'error': 'Analysis is already running'}
+        if self._diff_worker.snapshot().get('running'):
+            return {'ok': False, 'error': 'Differential analysis is already running'}
         persist_settings(config)
         self._server.stop()
         self._view_urls = {'report': None, 'map': None}
@@ -242,6 +297,7 @@ class DetranspilerApi:
 
     def shutdown(self) -> None:
         self._server.stop()
+        self._diff_server.stop()
 
     def get_sources_tree(self) -> Dict[str, Any]:
         from detranspiler.gui.views.sources import build_sources_tree

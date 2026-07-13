@@ -3,7 +3,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Dict, Optional
-DEFAULT_SETTINGS: Dict[str, Any] = {'ghidra_install_dir': '', 'use_ghidra': True, 'input_dll': '', 'jar_path': '', 'use_jar': False, 'decompile_jar': True, 'validate_java': True, 'compile_java': False, 'out_dir': '', 'mode': 'AUTO', 'force': False, 'pseudo_c': '', 'functions_json': '', 'strings_json': '', 'window_width': 1280, 'window_height': 860}
+DEFAULT_SETTINGS: Dict[str, Any] = {'ghidra_install_dir': '', 'use_ghidra': True, 'input_dll': '', 'jar_path': '', 'use_jar': False, 'decompile_jar': True, 'validate_java': True, 'compile_java': False, 'out_dir': '', 'mode': 'AUTO', 'force': False, 'pseudo_c': '', 'functions_json': '', 'strings_json': '', 'diff_old': '', 'diff_new': '', 'diff_out': '', 'diff_old_jar': '', 'diff_new_jar': '', 'diff_mode': 'AUTO', 'diff_force': False, 'diff_use_ghidra': True, 'window_width': 1280, 'window_height': 860}
 
 def settings_path() -> Path:
     base = os.environ.get('APPDATA') or os.environ.get('LOCALAPPDATA')
